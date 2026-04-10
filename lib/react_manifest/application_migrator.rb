@@ -1,0 +1,95 @@
+module ReactManifest
+  # Rewrites application*.js files to remove UX/app code requires,
+  # keeping only vendor lib requires.
+  #
+  # Safety:
+  #   - Creates a .bak backup before any write
+  #   - Dry-run mode: prints what would change, writes nothing
+  #   - Never removes :vendor or :passthrough lines
+  #   - Adds a managed-by comment at the top
+  class ApplicationMigrator
+    MANAGED_COMMENT = <<~JS
+      // Vendor libraries — loaded on every page.
+      // React app code is now served per-controller via react_bundle_tag.
+      // Managed by react-manifest-rails — do not add require_tree.
+    JS
+
+    def initialize(config = ReactManifest.configuration)
+      @config   = config
+      @analyzer = ApplicationAnalyzer.new(config)
+    end
+
+    # Migrate all application*.js files. Returns array of {file:, status:} hashes.
+    def migrate!
+      results = @analyzer.analyze
+
+      if results.empty?
+        $stdout.puts "[ReactManifest] No application*.js files found to migrate."
+        return []
+      end
+
+      results.map do |result|
+        if result.clean?
+          $stdout.puts "[ReactManifest] #{short(result.file)} — already clean, skipping."
+          { file: result.file, status: :already_clean }
+        else
+          rewrite(result)
+        end
+      end
+    end
+
+    private
+
+    def rewrite(result)
+      file    = result.file
+      new_content = build_new_content(result)
+
+      if @config.dry_run?
+        $stdout.puts "\n[ReactManifest] DRY-RUN: #{short(file)}"
+        print_diff(file, new_content)
+        return { file: file, status: :dry_run }
+      end
+
+      # Backup
+      bak_path = "#{file}.bak"
+      FileUtils.cp(file, bak_path)
+      $stdout.puts "[ReactManifest] Backup: #{short(bak_path)}"
+
+      File.write(file, new_content, encoding: "utf-8")
+      $stdout.puts "[ReactManifest] Migrated: #{short(file)}"
+
+      { file: file, status: :migrated, backup: bak_path }
+    end
+
+    def build_new_content(result)
+      kept_lines = result.directives
+        .select { |d| %i[vendor passthrough].include?(d.classification) }
+        .map(&:original_line)
+
+      # Remove leading blank lines from kept_lines
+      kept_lines.shift while kept_lines.first&.strip&.empty?
+
+      lines = []
+      lines << MANAGED_COMMENT
+      lines += kept_lines
+      lines << ""  # trailing newline
+
+      lines.join("\n")
+    end
+
+    def print_diff(file, new_content)
+      old_lines = File.readlines(file, encoding: "utf-8").map(&:chomp)
+      new_lines = new_content.lines.map(&:chomp)
+
+      removed = old_lines - new_lines
+      added   = new_lines - old_lines
+
+      removed.each { |l| $stdout.puts "  - #{l}" }
+      added.each   { |l| $stdout.puts "  + #{l}" }
+    end
+
+    def short(path)
+      path.to_s.sub(Rails.root.to_s + "/", "")
+    end
+  end
+end

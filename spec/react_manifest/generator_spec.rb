@@ -1,0 +1,148 @@
+require "spec_helper"
+
+RSpec.describe ReactManifest::Generator do
+  subject(:generator) { described_class.new(config) }
+
+  let(:config) { ReactManifest.configuration }
+
+  around(:each) do |example|
+    with_temp_rails_root do |tmpdir|
+      copy_fixtures_to(tmpdir)
+      fixture_config(tmpdir)
+      example.run
+    end
+  end
+
+  def output_dir
+    config.abs_output_dir
+  end
+
+  def read_manifest(name)
+    File.read(File.join(output_dir, name), encoding: "utf-8")
+  end
+
+  describe "#run!" do
+    before { generator.run! }
+
+    it "generates ux_shared.js" do
+      expect(File.exist?(File.join(output_dir, "ux_shared.js"))).to be true
+    end
+
+    it "generates ux_notifications.js" do
+      expect(File.exist?(File.join(output_dir, "ux_notifications.js"))).to be true
+    end
+
+    it "generates ux_users.js" do
+      expect(File.exist?(File.join(output_dir, "ux_users.js"))).to be true
+    end
+
+    it "generates ux_main.js" do
+      expect(File.exist?(File.join(output_dir, "ux_main.js"))).to be true
+    end
+
+    describe "ux_shared.js content" do
+      subject(:content) { read_manifest("ux_shared.js") }
+
+      it "has the AUTO-GENERATED header" do
+        expect(content).to include("AUTO-GENERATED")
+      end
+
+      it "requires component files" do
+        expect(content).to include("ux/components/buttons/icon_button")
+        expect(content).to include("ux/components/buttons/primary_button")
+        expect(content).to include("ux/components/form/text_input")
+      end
+
+      it "requires hook files" do
+        expect(content).to include("ux/hooks/use_fetch")
+        expect(content).to include("ux/hooks/use_modal")
+      end
+
+      it "requires lib files" do
+        expect(content).to include("ux/lib/api_helpers")
+        expect(content).to include("ux/lib/format_date")
+      end
+
+      it "buttons/ appears before hooks/ (alphabetical order)" do
+        btn_pos  = content.index("components/buttons")
+        hook_pos = content.index("hooks/")
+        expect(btn_pos).to be < hook_pos
+      end
+
+      it "icon_button appears before primary_button (alphabetical within dir)" do
+        icon_pos    = content.index("icon_button")
+        primary_pos = content.index("primary_button")
+        expect(icon_pos).to be < primary_pos
+      end
+    end
+
+    describe "ux_notifications.js content" do
+      subject(:content) { read_manifest("ux_notifications.js") }
+
+      it "requires ux_shared" do
+        expect(content).to include("//= require ux_shared")
+      end
+
+      it "requires notifications_index" do
+        expect(content).to include("notifications_index")
+      end
+
+      it "requires notifications_show" do
+        expect(content).to include("notifications_show")
+      end
+
+      it "index appears before show (alphabetical)" do
+        idx_pos  = content.index("notifications_index")
+        show_pos = content.index("notifications_show")
+        expect(idx_pos).to be < show_pos
+      end
+    end
+
+    describe "idempotency" do
+      it "does not change file if content is unchanged" do
+        mtime_before = File.mtime(File.join(output_dir, "ux_shared.js"))
+        sleep 0.01
+        results = generator.run!
+        mtime_after = File.mtime(File.join(output_dir, "ux_shared.js"))
+
+        unchanged = results.select { |r| r[:status] == :unchanged }
+        expect(unchanged).not_to be_empty
+        expect(mtime_before).to eq(mtime_after)
+      end
+    end
+
+    describe "dry_run mode" do
+      it "does not write any files" do
+        ReactManifest.configure { |c| c.dry_run = true }
+        FileUtils.rm_f(File.join(output_dir, "ux_shared.js"))
+
+        expect {
+          described_class.new(config).run!
+        }.not_to(change { Dir.glob(File.join(output_dir, "ux_shared.js")).any? })
+      end
+    end
+
+    describe "pinned file protection" do
+      it "does not overwrite a file without AUTO-GENERATED header" do
+        # Write a hand-curated ux_shared.js without the header
+        pinned_path = File.join(output_dir, "ux_shared.js")
+        File.write(pinned_path, "// HAND CURATED\n//= require something_special\n")
+
+        results = described_class.new(config).run!
+        skipped = results.select { |r| r[:status] == :skipped_pinned }
+        expect(skipped).not_to be_empty
+
+        # Content should remain unchanged
+        expect(File.read(pinned_path)).to include("HAND CURATED")
+      end
+    end
+
+    it "does not touch application.js" do
+      app_path = File.join(output_dir, "application.js")
+      mtime = File.mtime(app_path)
+      sleep 0.01
+      generator.run!
+      expect(File.mtime(app_path)).to eq(mtime)
+    end
+  end
+end
