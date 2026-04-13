@@ -61,7 +61,9 @@ module ReactManifest
     # are automatically detected without restarting the development server.
     def watched_dirs
       return [] unless Dir.exist?(@config.abs_ux_root)
-      [@config.abs_ux_root]
+      dirs = [@config.abs_ux_root]
+      dirs << @config.abs_app_dir if Dir.exist?(@config.abs_app_dir)
+      dirs
     end
   end
 end
