@@ -1,4 +1,6 @@
 require "digest"
+require "set"
+require "tmpdir"
 
 module ReactManifest
   # Generates all ux_*.js Sprockets manifest files.
@@ -8,7 +10,8 @@ module ReactManifest
   #   ux_<ctrl>.js   — one per controller subdir, requires ux_shared + controller files
   #
   # All generated files carry the AUTO-GENERATED header and are idempotent
-  # (skips write if content unchanged).
+  # (skips write if content unchanged). Writes are atomic (temp-file + rename)
+  # to avoid partial reads from concurrent processes.
   #
   # Never touches application.js, application_dev.js, or files in exclude_paths.
   class Generator
@@ -108,7 +111,18 @@ module ReactManifest
       end
 
       FileUtils.mkdir_p(File.dirname(dest))
-      File.write(dest, content, encoding: "utf-8")
+
+      # Atomic write: write to a temp file in the same directory then rename,
+      # so concurrent readers never see a partially-written manifest.
+      tmp = "#{dest}.tmp.#{Process.pid}"
+      begin
+        File.write(tmp, content, encoding: "utf-8")
+        File.rename(tmp, dest)
+      rescue => e
+        File.unlink(tmp) if File.exist?(tmp)
+        raise e
+      end
+
       { path: dest, status: :written }
     end
 
@@ -123,25 +137,47 @@ module ReactManifest
 
     def js_files_in(dir)
       return [] unless Dir.exist?(dir)
-      # Match .js and .js.jsx files; sort alphabetically for determinism
-      Dir.glob(File.join(dir, "**", "*.{js,jsx}"))
-         .reject { |f| File.directory?(f) }
-         # Exclude files that are themselves manifests (AUTO-GENERATED)
-         .reject { |f| auto_generated?(f) }
-         .sort
+
+      files = Dir.glob(File.join(dir, "**", "*.{js,jsx}"))
+        .reject { |f| File.directory?(f) }
+        .reject { |f| auto_generated?(f) }
+        .reject { |f| excluded_path?(f) }
+        .sort
+
+      # Deduplicate by logical require path: if both foo.js and foo.jsx exist,
+      # keep foo.js (sorted first) to avoid duplicate //= require directives
+      # that would cause a Sprockets error.
+      seen = Set.new
+      files.each_with_object([]) do |f, uniq|
+        logical = relative_require_path(f)
+        next if seen.include?(logical)
+        seen << logical
+        uniq << f
+      end
+    end
+
+    # Returns true if the file path contains a component matching any exclude_path.
+    # exclude_paths are matched against individual path segments, so "vendor" matches
+    # ux/vendor/foo.js but not ux/vendor_custom/foo.js.
+    def excluded_path?(abs_path)
+      parts = abs_path.split(File::SEPARATOR)
+      @config.exclude_paths.any? { |ep| parts.include?(ep) }
     end
 
     def relative_require_path(abs_path)
-      base = Rails.root.join("app", "assets", "javascripts").to_s + "/"
+      # Build relative to output_dir (configurable) rather than a hardcoded path.
+      base = @config.abs_output_dir + File::SEPARATOR
       rel  = abs_path.sub(base, "")
-      # Strip Sprockets-understood extensions: .js.jsx → "", .js → ""
+      # Strip Sprockets-understood extensions: .js.jsx → "", .jsx → "", .js → ""
       rel.sub(/\.js\.jsx$/, "").sub(/\.jsx$/, "").sub(/\.js$/, "")
     end
 
     def auto_generated?(path)
       return false unless File.exist?(path)
-      first_line = File.foreach(path).first.to_s
-      first_line.include?("AUTO-GENERATED")
+      # Read up to first 2 lines — handles empty files (first.to_s returns "")
+      # without incorrectly treating them as user-pinned.
+      first_two = File.foreach(path).first(2).join
+      first_two.include?("AUTO-GENERATED")
     end
 
     def print_diff(dest, new_content)

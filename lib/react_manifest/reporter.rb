@@ -30,12 +30,14 @@ module ReactManifest
     private
 
     def load_sprockets_manifest
-      public_assets = Rails.root.join("public", "assets")
+      # Use Rails.public_path to respect non-default public directory config.
+      public_assets = Rails.public_path.join("assets")
       manifest_file = Dir.glob(File.join(public_assets, ".sprockets-manifest-*.json")).first ||
                       Dir.glob(File.join(public_assets, "manifest-*.json")).first
 
       unless manifest_file && File.exist?(manifest_file)
-        puts "[ReactManifest] Sprockets manifest not found. Run `rails assets:precompile` first."
+        puts "[ReactManifest] Sprockets manifest not found under #{public_assets}."
+        puts "  Run `rails assets:precompile` first."
         return {}
       end
 
@@ -46,7 +48,7 @@ module ReactManifest
     end
 
     def collect_bundles(manifest)
-      public_assets = Rails.root.join("public", "assets").to_s
+      public_assets = Rails.public_path.join("assets").to_s
       bundles = []
 
       manifest.each do |logical_path, fingerprinted|

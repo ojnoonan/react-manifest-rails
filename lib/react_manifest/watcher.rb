@@ -1,29 +1,36 @@
-require "listen"
-
 module ReactManifest
   # Watches the ux/ directory tree for file changes and triggers
   # manifest regeneration automatically.
   #
-  # Uses the `listen` gem (hard dependency). Auto-started in development
-  # via the Railtie initializer.
+  # Uses the `listen` gem (soft dependency — degrades gracefully if not available).
+  # Auto-started in development via the Railtie initializer.
+  #
+  # Watches ux_root recursively so newly added controller directories are
+  # picked up without a server restart.
   module Watcher
     DEBOUNCE_SECONDS = 0.3
 
     class << self
       def start(config = ReactManifest.configuration)
-        classifier = TreeClassifier.new(config)
-        dirs = classifier.watched_dirs
-
-        if dirs.empty?
-          log "No directories to watch. Check ux_root: #{config.ux_root}"
+        begin
+          require "listen"
+        rescue LoadError
+          log "listen gem not available — file watching disabled. " \
+              "Add `gem 'listen'` to the development group in your Gemfile."
           return
         end
 
-        log "Watching #{dirs.size} director#{dirs.size == 1 ? 'y' : 'ies'} for changes..."
-        dirs.each { |d| log "  #{d.sub(Rails.root.to_s + '/', '')}" } if config.verbose?
+        root = config.abs_ux_root
+
+        unless Dir.exist?(root)
+          log "ux_root does not exist (#{root}) — file watching disabled until directory is created."
+          return
+        end
+
+        log "Watching #{root.sub(Rails.root.to_s + '/', '')} for changes..."
 
         @listener = Listen.to(
-          *dirs,
+          root,
           only:    /\.(js|jsx)$/,
           latency: DEBOUNCE_SECONDS
         ) do |modified, added, removed|

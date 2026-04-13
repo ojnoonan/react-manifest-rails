@@ -1,3 +1,5 @@
+require "set"
+
 module ReactManifest
   # Scans JSX/JS files using regex (no AST, no Node.js required).
   #
@@ -135,8 +137,15 @@ module ReactManifest
     def js_files_in(dir)
       return [] unless Dir.exist?(dir)
       Dir.glob(File.join(dir, "**", "*.{js,js.jsx}"))
-         .reject { |f| File.directory?(f) }
-         .sort
+        .reject { |f| File.directory?(f) }
+        .reject { |f| excluded_path?(f) }
+        .sort
+    end
+
+    # Returns true if the file path contains a segment matching any exclude_path.
+    def excluded_path?(abs_path)
+      parts = abs_path.split(File::SEPARATOR)
+      @config.exclude_paths.any? { |ep| parts.include?(ep) }
     end
 
     def extract_definitions(file_path)
@@ -149,11 +158,11 @@ module ReactManifest
     end
 
     def relative_require_path(abs_path)
-      # Returns path relative to Rails.root/app/assets/javascripts, without extension
-      base = Rails.root.join("app", "assets", "javascripts").to_s
-      rel  = abs_path.sub(base + "/", "")
-      # Strip .js or .js.jsx extension for Sprockets require
-      rel.sub(/\.js\.jsx$/, "").sub(/\.js$/, "")
+      # Build relative to output_dir (configurable) rather than a hardcoded path.
+      base = @config.abs_output_dir + File::SEPARATOR
+      rel  = abs_path.sub(base, "")
+      # Strip Sprockets-understood extensions: .js.jsx → "", .jsx → "", .js → ""
+      rel.sub(/\.js\.jsx$/, "").sub(/\.jsx$/, "").sub(/\.js$/, "")
     end
 
     def validate_naming(file_path, ctrl_name, warnings)

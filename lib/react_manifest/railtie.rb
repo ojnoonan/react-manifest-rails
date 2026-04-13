@@ -10,7 +10,11 @@ module ReactManifest
     # ----------------------------------------------------------------
     initializer "react_manifest.start_watcher" do
       if Rails.env.development? && !ReactManifest::Watcher.running?
-        ReactManifest::Watcher.start(ReactManifest.configuration)
+        begin
+          ReactManifest::Watcher.start(ReactManifest.configuration)
+        rescue => e
+          Rails.logger.warn "[ReactManifest] Could not start file watcher: #{e.message}"
+        end
       end
     end
 
@@ -26,13 +30,17 @@ module ReactManifest
     # ----------------------------------------------------------------
     # Hook manifest generation into assets:precompile
     # (safety net for CI/production — dev uses the watcher)
+    #
+    # Using prepend_actions so generation runs as a block before
+    # Sprockets begins compiling, rather than as a Rake prerequisite
+    # (which is subject to parallel task ordering under rake -j).
     # ----------------------------------------------------------------
     rake_tasks do
       load File.expand_path("../../../tasks/react_manifest.rake", __FILE__)
 
-      # Only enhance if the assets task is available (sprockets-rails present)
-      Rake::Task.task_defined?("assets:precompile") &&
+      if Rake::Task.task_defined?("assets:precompile")
         Rake::Task["assets:precompile"].enhance(["react_manifest:generate"])
+      end
     end
   end
 end

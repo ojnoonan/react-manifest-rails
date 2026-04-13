@@ -16,45 +16,52 @@ module ReactManifest
       shared_dirs     = []
 
       unless Dir.exist?(@config.abs_ux_root)
-        warn "[ReactManifest] ux_root does not exist: #{@config.abs_ux_root}"
+        warn "[ReactManifest] ux_root does not exist: #{@config.abs_ux_root}. " \
+             "Create the directory and run `rails react_manifest:generate`."
         return Result.new(controller_dirs: [], shared_dirs: [])
       end
 
-      Dir.children(@config.abs_ux_root).sort.each do |entry|
-        full_path = File.join(@config.abs_ux_root, entry)
-        next unless File.directory?(full_path)
+      begin
+        Dir.children(@config.abs_ux_root).sort.each do |entry|
+          full_path = File.join(@config.abs_ux_root, entry)
+          next unless File.directory?(full_path)
 
-        if entry == @config.app_dir
-          # Walk one level deeper — each subdir is a controller bundle
-          Dir.children(full_path).sort.each do |ctrl_entry|
-            ctrl_path = File.join(full_path, ctrl_entry)
-            next unless File.directory?(ctrl_path)
-            next if @config.ignore.include?(ctrl_entry)
+          if entry == @config.app_dir
+            begin
+              Dir.children(full_path).sort.each do |ctrl_entry|
+                ctrl_path = File.join(full_path, ctrl_entry)
+                next unless File.directory?(ctrl_path)
+                next if @config.ignore.include?(ctrl_entry)
 
-            controller_dirs << {
-              name: ctrl_entry,
-              path: ctrl_path,
-              bundle_name: "ux_#{ctrl_entry}"
+                controller_dirs << {
+                  name:        ctrl_entry,
+                  path:        ctrl_path,
+                  bundle_name: "ux_#{ctrl_entry}"
+                }
+              end
+            rescue Errno::EACCES => e
+              warn "[ReactManifest] Permission denied reading #{full_path}: #{e.message}"
+            end
+          else
+            shared_dirs << {
+              name: entry,
+              path: full_path
             }
           end
-        else
-          # Any other top-level dir under ux/ is a shared dir
-          shared_dirs << {
-            name: entry,
-            path: full_path
-          }
         end
+      rescue Errno::EACCES => e
+        warn "[ReactManifest] Permission denied reading ux_root #{@config.abs_ux_root}: #{e.message}"
+        return Result.new(controller_dirs: [], shared_dirs: [])
       end
 
       Result.new(controller_dirs: controller_dirs, shared_dirs: shared_dirs)
     end
 
-    # All directories that should be watched for changes
+    # Watch ux_root recursively so newly added controller directories
+    # are automatically detected without restarting the development server.
     def watched_dirs
-      result = classify
-      dirs = [File.join(@config.abs_ux_root, @config.app_dir)]
-      dirs += result.shared_dirs.map { |d| d[:path] }
-      dirs.select { |d| Dir.exist?(d) }
+      return [] unless Dir.exist?(@config.abs_ux_root)
+      [@config.abs_ux_root]
     end
   end
 end

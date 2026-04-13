@@ -3,7 +3,7 @@ module ReactManifest
   # keeping only vendor lib requires.
   #
   # Safety:
-  #   - Creates a .bak backup before any write
+  #   - Creates a .bak backup before any write; aborts if backup fails
   #   - Dry-run mode: prints what would change, writes nothing
   #   - Never removes :vendor or :passthrough lines
   #   - Adds a managed-by comment at the top
@@ -41,7 +41,7 @@ module ReactManifest
     private
 
     def rewrite(result)
-      file    = result.file
+      file        = result.file
       new_content = build_new_content(result)
 
       if @config.dry_run?
@@ -50,10 +50,16 @@ module ReactManifest
         return { file: file, status: :dry_run }
       end
 
-      # Backup
+      # Backup first — abort if backup cannot be created to avoid data loss.
       bak_path = "#{file}.bak"
-      FileUtils.cp(file, bak_path)
-      $stdout.puts "[ReactManifest] Backup: #{short(bak_path)}"
+      begin
+        FileUtils.cp(file, bak_path)
+        $stdout.puts "[ReactManifest] Backup: #{short(bak_path)}"
+      rescue => e
+        $stdout.puts "[ReactManifest] ERROR: Could not create backup of #{short(file)}: #{e.message}"
+        $stdout.puts "[ReactManifest] Migration aborted for #{short(file)} — original file unchanged."
+        return { file: file, status: :backup_failed, error: e.message }
+      end
 
       File.write(file, new_content, encoding: "utf-8")
       $stdout.puts "[ReactManifest] Migrated: #{short(file)}"

@@ -12,7 +12,6 @@ require "react_manifest/application_migrator"
 require "react_manifest/watcher"
 require "react_manifest/reporter"
 require "react_manifest/view_helpers"
-require "react_manifest/railtie" if defined?(Rails)
 
 module ReactManifest
   class << self
