@@ -1,5 +1,6 @@
 require "digest"
 require "set"
+require "time"
 require "tmpdir"
 
 module ReactManifest
