@@ -36,11 +36,14 @@ jobs:
         ruby-version: '3.2'
         bundler-cache: true
 
+    - name: Build gem
+      run: gem build react-manifest-rails.gemspec
+
     - name: Publish to RubyGems
       run: |
         mkdir -p ~/.gem
         echo ":rubygems_api_key: ${{ secrets.RUBYGEMS_API_KEY }}" > ~/.gem/credentials
         chmod 0600 ~/.gem/credentials
-        gem push pkg/react-manifest-rails-*.gem
+        gem push react-manifest-rails-*.gem
       env:
         GEM_HOST_URI: "https://rubygems.org"
