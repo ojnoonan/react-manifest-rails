@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>React Manifest Rails — Demo</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <%= csrf_meta_tags %>
+    <%= csp_meta_tag %>
+
+    <%# Tailwind CSS via CDN — styling only, no build step %>
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <%# React 18 UMD (development build) via CDN %>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+
+    <%# Sprockets application bundle (lib + shared utils) %>
+    <%= javascript_include_tag "application" %>
+
+    <%# react-manifest-rails: only the bundles this controller needs %>
+    <%= react_bundle_tag %>
+
+    <style>
+      body { background: #f8fafc; font-family: ui-sans-serif, system-ui, sans-serif; }
+      #react-app { min-height: 60vh; }
+    </style>
+  </head>
+  <body>
+    <%# Simple top nav for easy page switching in the demo %>
+    <nav class="bg-white border-b border-gray-200 mb-0">
+      <div class="max-w-7xl mx-auto px-4 flex items-center gap-6 h-12">
+        <span class="font-semibold text-blue-700 text-sm tracking-tight">⚡ react-manifest-rails demo</span>
+        <% [
+          ['Dashboard', '/'],
+          ['Users', '/users'],
+          ['Products', '/products'],
+          ['Orders', '/orders'],
+          ['Reports', '/reports'],
+          ['Notifications', '/notifications'],
+          ['Settings', '/settings'],
+          ['Admin', '/admin/users'],
+          ['Login', '/login'],
+        ].each do |label, path| %>
+          <a href="<%= path %>"
+             class="text-xs font-medium <%= request.path == path ? 'text-blue-700 border-b-2 border-blue-600' : 'text-gray-500 hover:text-gray-900' %> pb-px">
+            <%= label %>
+          </a>
+        <% end %>
+
+        <%# Bundle debug badge — shows which bundles loaded for THIS page %>
+        <span class="ml-auto text-xs text-gray-400 font-mono" id="bundle-badge"></span>
+      </div>
+    </nav>
+
+    <%
+      # Derive component name from controller_path + action: admin/users#index → AdminUsersIndex
+      component_name = (controller_path.split('/').map(&:camelize) + [action_name.camelize]).join
+    %>
+    <div id="react-app"
+         data-component="<%= component_name %>"
+         class="max-w-7xl mx-auto px-4 py-6"></div>
+
+    <script>
+      // Show which ux_* bundles were loaded for this page
+      (function() {
+        var scripts = Array.from(document.querySelectorAll('script[src]'))
+          .map(function(s) { return s.src; })
+          .filter(function(s) { return s.includes('/assets/ux_'); })
+          .map(function(s) { return s.split('/assets/')[1].replace(/\.debug.*/, ''); });
+        var badge = document.getElementById('bundle-badge');
+        if (badge && scripts.length) badge.textContent = '📦 ' + scripts.join(' + ');
+      })();
+    </script>
+
+    <%= yield :extra_js %>
+  </body>
+</html>

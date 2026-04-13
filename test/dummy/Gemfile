@@ -1,0 +1,17 @@
+source "https://rubygems.org"
+
+gem "rails", ">= 6.1"
+gem "sprockets-rails"
+gem "sqlite3"
+gem "puma"
+
+# The gem under test
+gem "react-manifest-rails", path: "../..", require: "react_manifest_rails"
+
+group :development do
+  gem "listen"
+end
+
+group :test do
+  gem "capybara"
+end

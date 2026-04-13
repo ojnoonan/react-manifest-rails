@@ -1,0 +1,7 @@
+db/*.sqlite3
+db/*.sqlite3-journal
+log/
+tmp/
+public/assets/
+node_modules/
+.bundle/

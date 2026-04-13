@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "Dummy Rails App (Puma)",
+      "runtimeExecutable": "bundle",
+      "runtimeArgs": ["exec", "rails", "server"],
+      "port": 3000,
+      "cwd": "test/dummy"
+    }
+  ]
+}
