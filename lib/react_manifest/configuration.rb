@@ -1,4 +1,12 @@
 module ReactManifest
+  # Holds all configuration for the gem. Obtain via {ReactManifest.configure}.
+  #
+  # @example
+  #   ReactManifest.configure do |c|
+  #     c.ux_root           = "app/assets/javascripts/ux"
+  #     c.extensions        = %w[js jsx ts tsx]
+  #     c.size_threshold_kb = 1000
+  #   end
   class Configuration
     # Root of the ux/ tree to scan (relative to Rails.root)
     attr_accessor :ux_root
@@ -24,6 +32,9 @@ module ReactManifest
     # Warn if a bundle exceeds this size in KB (0 = disabled)
     attr_accessor :size_threshold_kb
 
+    # File extensions to scan (default: js and jsx; add "ts", "tsx" for TypeScript)
+    attr_accessor :extensions
+
     # Print what would change, write nothing
     attr_accessor :dry_run
 
@@ -39,6 +50,7 @@ module ReactManifest
       @ignore            = []
       @exclude_paths     = %w[react react_dev vendor]
       @size_threshold_kb = 500
+      @extensions        = %w[js jsx]
       @dry_run           = false
       @verbose           = false
     end
@@ -49,6 +61,16 @@ module ReactManifest
 
     def verbose?
       !!@verbose
+    end
+
+    # Glob fragment used by Dir.glob, e.g. "*.{js,jsx}" or "*.{js,jsx,ts,tsx}"
+    def extensions_glob
+      "*.{#{extensions.join(',')}}"
+    end
+
+    # Regexp used by the file watcher to filter events, e.g. /\.(js|jsx)$/
+    def extensions_pattern
+      Regexp.new("\\.(#{extensions.map { |e| Regexp.escape(e) }.join('|')})$")
     end
 
     # Absolute path helpers (requires Rails.root to be set)

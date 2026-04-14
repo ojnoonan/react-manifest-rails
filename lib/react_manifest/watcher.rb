@@ -27,11 +27,11 @@ module ReactManifest
           return
         end
 
-        log "Watching #{root.sub(Rails.root.to_s + '/', '')} for changes..."
+        log "Watching #{root.sub("#{Rails.root}/", '')} for changes..."
 
         @listener = Listen.to(
           root,
-          only:    /\.(js|jsx)$/,
+          only: config.extensions_pattern,
           latency: DEBOUNCE_SECONDS
         ) do |modified, added, removed|
           changed = (modified + added + removed).map { |f| File.basename(f) }
@@ -56,7 +56,7 @@ module ReactManifest
       def regenerate!(config)
         Generator.new(config).run!
         log "Manifests regenerated"
-      rescue => e
+      rescue StandardError => e
         log "Error during regeneration: #{e.message}"
         log e.backtrace.first(5).join("\n") if config.verbose?
       end

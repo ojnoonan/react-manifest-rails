@@ -8,7 +8,7 @@ module ReactManifest
   #   - Never removes :vendor or :passthrough lines
   #   - Adds a managed-by comment at the top
   class ApplicationMigrator
-    MANAGED_COMMENT = <<~JS
+    MANAGED_COMMENT = <<~JS.freeze
       // Vendor libraries — loaded on every page.
       // React app code is now served per-controller via react_bundle_tag.
       // Managed by react-manifest-rails — do not add require_tree.
@@ -54,8 +54,9 @@ module ReactManifest
       bak_path = "#{file}.bak"
       begin
         FileUtils.cp(file, bak_path)
+        File.chmod(0o600, bak_path)
         $stdout.puts "[ReactManifest] Backup: #{short(bak_path)}"
-      rescue => e
+      rescue StandardError => e
         $stdout.puts "[ReactManifest] ERROR: Could not create backup of #{short(file)}: #{e.message}"
         $stdout.puts "[ReactManifest] Migration aborted for #{short(file)} — original file unchanged."
         return { file: file, status: :backup_failed, error: e.message }
@@ -69,8 +70,11 @@ module ReactManifest
 
     def build_new_content(result)
       kept_lines = result.directives
-        .select { |d| %i[vendor passthrough].include?(d.classification) }
-        .map(&:original_line)
+                         .select do |d|
+        %i[vendor
+           passthrough].include?(d.classification)
+      end
+                                          .map(&:original_line)
 
       # Remove leading blank lines from kept_lines
       kept_lines.shift while kept_lines.first&.strip&.empty?
@@ -78,7 +82,7 @@ module ReactManifest
       lines = []
       lines << MANAGED_COMMENT
       lines += kept_lines
-      lines << ""  # trailing newline
+      lines << "" # trailing newline
 
       lines.join("\n")
     end
@@ -95,7 +99,7 @@ module ReactManifest
     end
 
     def short(path)
-      path.to_s.sub(Rails.root.to_s + "/", "")
+      path.to_s.sub("#{Rails.root}/", "")
     end
   end
 end

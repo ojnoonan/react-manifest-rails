@@ -63,8 +63,8 @@ module ReactManifest
         gzip_kb = File.exist?(gz_path) ? (File.size(gz_path) / 1024.0).round(1) : nil
 
         bundles << {
-          name:    logical_path,
-          raw_kb:  raw_kb,
+          name: logical_path,
+          raw_kb: raw_kb,
           gzip_kb: gzip_kb
         }
       end
@@ -75,13 +75,13 @@ module ReactManifest
     def print_table(bundles)
       gzip_available = bundles.any? { |b| b[:gzip_kb] }
 
-      puts "\n#{"Bundle".ljust(35)} #{"Raw (KB)".rjust(10)}#{gzip_available ? "   #{"Gzip (KB)".rjust(10)}" : ""}"
+      puts "\n#{'Bundle'.ljust(35)} #{'Raw (KB)'.rjust(10)}#{"   #{'Gzip (KB)'.rjust(10)}" if gzip_available}"
       puts "-" * (gzip_available ? 62 : 48)
 
       bundles.each do |b|
-        over_threshold = @config.size_threshold_kb > 0 && b[:raw_kb] > @config.size_threshold_kb
+        over_threshold = @config.size_threshold_kb.positive? && b[:raw_kb] > @config.size_threshold_kb
         flag           = over_threshold ? "  ⚠ exceeds #{@config.size_threshold_kb}KB threshold" : ""
-        gzip_col       = gzip_available ? "   #{(b[:gzip_kb] || "n/a").to_s.rjust(10)}" : ""
+        gzip_col       = gzip_available ? "   #{(b[:gzip_kb] || 'n/a').to_s.rjust(10)}" : ""
 
         puts "#{b[:name].ljust(35)} #{b[:raw_kb].to_s.rjust(10)}#{gzip_col}#{flag}"
       end

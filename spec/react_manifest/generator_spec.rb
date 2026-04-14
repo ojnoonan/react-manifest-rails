@@ -116,9 +116,9 @@ RSpec.describe ReactManifest::Generator do
         ReactManifest.configure { |c| c.dry_run = true }
         FileUtils.rm_f(File.join(output_dir, "ux_shared.js"))
 
-        expect {
+        expect do
           described_class.new(config).run!
-        }.not_to(change { Dir.glob(File.join(output_dir, "ux_shared.js")).any? })
+        end.not_to(change { Dir.glob(File.join(output_dir, "ux_shared.js")).any? })
       end
     end
 
@@ -143,6 +143,34 @@ RSpec.describe ReactManifest::Generator do
       sleep 0.01
       generator.run!
       expect(File.mtime(app_path)).to eq(mtime)
+    end
+
+    describe "error handling" do
+      it "returns false from auto_generated? for a nonexistent file" do
+        path = File.join(output_dir, "does_not_exist.js")
+        expect(generator.send(:auto_generated?, path)).to be false
+      end
+
+      it "returns false from auto_generated? for an unreadable file" do
+        path = File.join(output_dir, "ux_shared.js")
+        allow(File).to receive(:foreach).and_call_original
+        allow(File).to receive(:foreach).with(path).and_raise(Errno::EACCES, "Permission denied")
+        expect(generator.send(:auto_generated?, path)).to be false
+      end
+
+      it "cleans up the temp file when an atomic write fails" do
+        dest = File.join(output_dir, "ux_shared.js")
+        # Remove the manifest so write_manifest actually attempts a rename
+        FileUtils.rm(dest)
+
+        allow(File).to receive(:rename).and_raise(Errno::EXDEV, "cross-device link")
+
+        expect { generator.run! }.to raise_error(Errno::EXDEV)
+
+        # No stale .tmp.PID file should remain
+        tmp_files = Dir.glob("#{dest}.tmp.*")
+        expect(tmp_files).to be_empty
+      end
     end
   end
 end

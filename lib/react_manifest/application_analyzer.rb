@@ -6,26 +6,34 @@ module ReactManifest
   #
   # Produces a human-readable report without writing anything.
   class ApplicationAnalyzer
-    DIRECTIVE_PATTERN = /^\s*\/\/=\s+(require(?:_tree|_directory)?)\s+(.+)$/.freeze
+    DIRECTIVE_PATTERN = %r{^\s*//=\s+(require(?:_tree|_directory)?)\s+(.+)$}
 
     # Libs we recognise as vendor (case-insensitive partial match on the require path)
     VENDOR_HINTS = %w[
       react react-dom react_dom reactdom
       mui material-ui
-      redux redux-thunk
+      redux redux-thunk redux-saga redux-toolkit
       axios lodash underscore
       jquery backbone handlebars
       turbo stimulus
       vendor
+      bootstrap tailwind tailwindcss
+      moment date-fns dayjs
+      formik react-hook-form
+      recharts chartjs chart.js
+      framer-motion
+      i18next
+      classnames clsx
+      uuid
     ].freeze
 
     ClassifiedDirective = Struct.new(:original_line, :directive, :path, :classification, :note, keyword_init: true)
 
     Result = Struct.new(:file, :directives, keyword_init: true) do
-      def vendor_lines;   directives.select { |d| d.classification == :vendor };   end
-      def ux_code_lines;  directives.select { |d| d.classification == :ux_code };  end
-      def unknown_lines;  directives.select { |d| d.classification == :unknown };  end
-      def clean?;         ux_code_lines.empty? && unknown_lines.empty?;             end
+      def vendor_lines = directives.select { |d| d.classification == :vendor }
+      def ux_code_lines = directives.select { |d| d.classification == :ux_code }
+      def unknown_lines = directives.select { |d| d.classification == :unknown }
+      def clean? = ux_code_lines.empty? && unknown_lines.empty?
     end
 
     def initialize(config = ReactManifest.configuration)
@@ -47,17 +55,14 @@ module ReactManifest
       end
 
       results.each do |result|
-        rel = result.file.sub(Rails.root.to_s + "/", "")
+        rel = result.file.sub("#{Rails.root}/", "")
         status = result.clean? ? "✓ already clean" : "⚠ needs migration"
         puts "\n#{rel} [#{status}]"
         puts "-" * 60
 
+        icon_map = { vendor: "  ✓ KEEP   ", ux_code: "  ✗ REMOVE ", unknown: "  ? REVIEW " }
         result.directives.each do |d|
-          icon = case d.classification
-                 when :vendor   then "  ✓ KEEP   "
-                 when :ux_code  then "  ✗ REMOVE "
-                 when :unknown  then "  ? REVIEW "
-                 end
+          icon = icon_map[d.classification]
           puts "#{icon} #{d.original_line.strip}"
           puts "           → #{d.note}" if d.note
         end
@@ -86,26 +91,26 @@ module ReactManifest
         unless match
           # Non-directive lines (comments, blank) — pass through as :vendor (keep)
           directives << ClassifiedDirective.new(
-            original_line:  raw,
-            directive:      nil,
-            path:           nil,
+            original_line: raw,
+            directive: nil,
+            path: nil,
             classification: :passthrough,
-            note:           nil
+            note: nil
           )
           next
         end
 
-        directive = match[1]  # require, require_tree, require_directory
+        directive = match[1] # require, require_tree, require_directory
         path      = match[2].strip
 
         classification, note = classify_directive(directive, path)
 
         directives << ClassifiedDirective.new(
-          original_line:  raw,
-          directive:      directive,
-          path:           path,
+          original_line: raw,
+          directive: directive,
+          path: path,
           classification: classification,
-          note:           note
+          note: note
         )
       end
 
@@ -115,27 +120,22 @@ module ReactManifest
     def classify_directive(directive, path)
       # require_tree is almost always too greedy
       if directive.include?("tree") || directive.include?("directory")
-        if path_is_ux?(path)
-          return [:ux_code, "require_tree over ux/ — will be replaced by ux_*.js bundles"]
-        else
-          return [:unknown, "require_tree/require_directory — review manually: #{path}"]
-        end
+        return [:ux_code, "require_tree over ux/ — will be replaced by ux_*.js bundles"] if path_is_ux?(path)
+
+        return [:unknown, "require_tree/require_directory — review manually: #{path}"]
+
       end
 
       # Explicit require
-      if path_is_ux?(path)
-        return [:ux_code, "ux/ code — will be served by ux_*.js bundles"]
-      end
+      return [:ux_code, "ux/ code — will be served by ux_*.js bundles"] if path_is_ux?(path)
 
-      if path_is_vendor?(path)
-        return [:vendor, nil]
-      end
+      return [:vendor, nil] if path_is_vendor?(path)
 
       [:unknown, "Could not auto-classify — review manually"]
     end
 
     def path_is_ux?(path)
-      ux_prefix = @config.ux_root.split("/").last  # e.g. "ux"
+      ux_prefix = @config.ux_root.split("/").last # e.g. "ux"
       path.include?(ux_prefix) ||
         path.start_with?("./ux") ||
         path.start_with?("ux/")

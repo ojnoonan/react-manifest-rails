@@ -71,6 +71,34 @@ RSpec.describe ReactManifest do
         bundles = described_class.resolve_bundles("admin/users")
         expect(bundles).to include("ux_admin_users")
       end
+
+      it "also tries the leaf segment for deeply nested controllers" do
+        # admin/dashboard/reports → should fall back to ux_reports if that exists
+        reports_path = File.join(config.abs_output_dir, "ux_reports.js")
+        File.write(reports_path, "// AUTO-GENERATED\n//= require ux_shared\n")
+
+        bundles = described_class.resolve_bundles("admin/dashboard/reports")
+        expect(bundles).to include("ux_reports")
+      end
+    end
+
+    describe "edge cases" do
+      it "returns only shared bundle for an empty string controller" do
+        bundles = described_class.resolve_bundles("")
+        # ux_ exists if generator made one; otherwise just shared
+        expect(bundles).to include("ux_shared")
+      end
+
+      it "does not duplicate shared bundle in always_include" do
+        ReactManifest.configure { |c| c.always_include = [config.shared_bundle] }
+        bundles = described_class.resolve_bundles("notifications")
+        expect(bundles.count(config.shared_bundle)).to eq(1)
+      end
+
+      it "does not include a bundle that does not exist on disk" do
+        bundles = described_class.resolve_bundles("ghost_controller")
+        expect(bundles).not_to include("ux_ghost_controller")
+      end
     end
   end
 end

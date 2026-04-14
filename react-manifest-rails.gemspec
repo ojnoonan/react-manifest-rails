@@ -15,11 +15,13 @@ Gem::Specification.new do |spec|
   DESC
   spec.homepage      = "https://github.com/olivernoonan/react-manifest-rails"
   spec.license       = "MIT"
-  spec.required_ruby_version = ">= 2.6.0"
+  spec.required_ruby_version = ">= 3.2.0"
 
   spec.metadata["homepage_uri"]    = spec.homepage
   spec.metadata["source_code_uri"] = spec.homepage
   spec.metadata["changelog_uri"]   = "#{spec.homepage}/blob/main/CHANGELOG.md"
+  spec.metadata["bug_tracker_uri"] = "#{spec.homepage}/issues"
+  spec.metadata["rubygems_mfa_required"] = "true"
 
   spec.files = Dir[
     "lib/**/*",
@@ -32,13 +34,16 @@ Gem::Specification.new do |spec|
   spec.require_paths = ["lib"]
 
   # Runtime dependencies
-  spec.add_dependency "railties",  ">= 6.1"
-  spec.add_dependency "listen",    "~> 3.0"
+  spec.add_dependency "railties", ">= 6.1", "< 9"
 
   # Development dependencies
+  spec.add_development_dependency "rails", ">= 6.1", "< 9"
+  spec.add_development_dependency "rake"
   spec.add_development_dependency "rspec",       "~> 3.12"
   spec.add_development_dependency "rspec-rails", "~> 6.0"
-  spec.add_development_dependency "rails",       ">= 6.1"
   spec.add_development_dependency "sprockets-rails"
-  spec.add_development_dependency "rake"
+  # listen is a soft runtime dependency (file watching in development).
+  # The gem gracefully degrades without it; add to your app's Gemfile:
+  #   gem "listen", "~> 3.0", group: :development
+  spec.add_development_dependency "listen", "~> 3.0"
 end

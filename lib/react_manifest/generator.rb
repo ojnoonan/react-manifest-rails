@@ -1,10 +1,18 @@
 require "digest"
-require "set"
 require "time"
 require "tmpdir"
 
 module ReactManifest
   # Generates all ux_*.js Sprockets manifest files.
+  #
+  # Instantiate with a {Configuration} and call {#run!}:
+  #
+  #   ReactManifest::Generator.new(ReactManifest.configuration).run!
+  #
+  # Returns an array of result hashes:
+  #   [{path: "/abs/path/ux_shared.js", status: :written}, ...]
+  #
+  # Possible +status+ values: +:written+, +:unchanged+, +:skipped_pinned+, +:dry_run+.
   #
   # Generates:
   #   ux_shared.js   — requires all files from shared dirs (components/, hooks/, lib/, etc.)
@@ -16,7 +24,7 @@ module ReactManifest
   #
   # Never touches application.js, application_dev.js, or files in exclude_paths.
   class Generator
-    HEADER = <<~JS
+    HEADER = <<~JS.freeze
       // AUTO-GENERATED — DO NOT EDIT
       // react-manifest-rails %<version>s | %<timestamp>s
       // Run `rails react_manifest:generate` to regenerate.
@@ -28,17 +36,20 @@ module ReactManifest
     end
 
     # Run full generation. Returns array of {path:, status:} hashes.
+    #
+    # All manifest content is built first (no filesystem writes), then written
+    # in a second pass so that a failure midway does not leave some bundles
+    # written and others stale/missing.
     def run!
-      results        = []
       classification = @classifier.classify
 
-      # 1. Generate ux_shared.js
-      results << generate_shared(classification.shared_dirs)
+      # Phase 1: build all content in memory — no I/O.
+      manifests = []
+      manifests << build_shared(classification.shared_dirs)
+      classification.controller_dirs.each { |ctrl| manifests << build_controller(ctrl) }
 
-      # 2. Generate one ux_<controller>.js per controller dir
-      classification.controller_dirs.each do |ctrl|
-        results << generate_controller(ctrl)
-      end
+      # Phase 2: write — each write is atomic (tmp + rename).
+      results = manifests.map { |m| write_manifest(m[:filename], m[:content]) }
 
       print_summary(results) if @config.verbose?
       results
@@ -48,7 +59,7 @@ module ReactManifest
 
     # ------------------------------------------------------------------ shared
 
-    def generate_shared(shared_dirs)
+    def build_shared(shared_dirs)
       lines     = header_lines
       any_files = false
 
@@ -60,17 +71,14 @@ module ReactManifest
         files.each { |f| lines << "//= require #{relative_require_path(f)}" }
       end
 
-      unless any_files
-        lines << "// (no shared files found)"
-      end
+      lines << "// (no shared files found)" unless any_files
 
-      bundle_name = @config.shared_bundle
-      write_manifest("#{bundle_name}.js", lines.join("\n") + "\n")
+      { filename: "#{@config.shared_bundle}.js", content: "#{lines.join("\n")}\n" }
     end
 
     # --------------------------------------------------------------- controller
 
-    def generate_controller(ctrl)
+    def build_controller(ctrl)
       lines = header_lines
       lines << "//= require #{@config.shared_bundle}"
       lines << ""
@@ -82,7 +90,7 @@ module ReactManifest
         files.each { |f| lines << "//= require #{relative_require_path(f)}" }
       end
 
-      write_manifest("#{ctrl[:bundle_name]}.js", lines.join("\n") + "\n")
+      { filename: "#{ctrl[:bundle_name]}.js", content: "#{lines.join("\n")}\n" }
     end
 
     # --------------------------------------------------------------- write
@@ -92,17 +100,13 @@ module ReactManifest
 
       # Safety: never touch files not bearing our AUTO-GENERATED header
       # (unless they don't exist yet)
-      if File.exist?(dest) && !auto_generated?(dest)
-        return { path: dest, status: :skipped_pinned }
-      end
+      return { path: dest, status: :skipped_pinned } if File.exist?(dest) && !auto_generated?(dest)
 
       new_digest = Digest::SHA256.hexdigest(content)
 
       if File.exist?(dest)
         existing_digest = Digest::SHA256.hexdigest(File.read(dest, encoding: "utf-8"))
-        if existing_digest == new_digest
-          return { path: dest, status: :unchanged }
-        end
+        return { path: dest, status: :unchanged } if existing_digest == new_digest
       end
 
       if @config.dry_run?
@@ -119,8 +123,8 @@ module ReactManifest
       begin
         File.write(tmp, content, encoding: "utf-8")
         File.rename(tmp, dest)
-      rescue => e
-        File.unlink(tmp) if File.exist?(tmp)
+      rescue StandardError => e
+        FileUtils.rm_f(tmp)
         raise e
       end
 
@@ -131,7 +135,7 @@ module ReactManifest
 
     def header_lines
       [
-        HEADER % { version: ReactManifest::VERSION, timestamp: Time.now.utc.iso8601 },
+        format(HEADER, version: ReactManifest::VERSION, timestamp: Time.now.utc.iso8601),
         ""
       ].flatten
     end
@@ -139,11 +143,11 @@ module ReactManifest
     def js_files_in(dir)
       return [] unless Dir.exist?(dir)
 
-      files = Dir.glob(File.join(dir, "**", "*.{js,jsx}"))
-        .reject { |f| File.directory?(f) }
-        .reject { |f| auto_generated?(f) }
-        .reject { |f| excluded_path?(f) }
-        .sort
+      files = Dir.glob(File.join(dir, "**", @config.extensions_glob))
+                 .reject { |f| File.directory?(f) }
+                 .reject { |f| auto_generated?(f) }
+                 .reject { |f| excluded_path?(f) }
+                 .sort
 
       # Deduplicate by logical require path: if both foo.js and foo.jsx exist,
       # keep foo.js (sorted first) to avoid duplicate //= require directives
@@ -152,6 +156,7 @@ module ReactManifest
       files.each_with_object([]) do |f, uniq|
         logical = relative_require_path(f)
         next if seen.include?(logical)
+
         seen << logical
         uniq << f
       end
@@ -174,11 +179,12 @@ module ReactManifest
     end
 
     def auto_generated?(path)
-      return false unless File.exist?(path)
-      # Read up to first 2 lines — handles empty files (first.to_s returns "")
-      # without incorrectly treating them as user-pinned.
+      # Avoid TOCTOU: don't check existence separately — just attempt the read
+      # and treat a missing/unreadable file as not auto-generated.
       first_two = File.foreach(path).first(2).join
       first_two.include?("AUTO-GENERATED")
+    rescue Errno::ENOENT, Errno::EACCES
+      false
     end
 
     def print_diff(dest, new_content)

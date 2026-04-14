@@ -1,7 +1,10 @@
-require "set"
-
 module ReactManifest
-  # Scans JSX/JS files using regex (no AST, no Node.js required).
+  # Scans JS/JSX (and optionally TS/TSX) files using regex — no AST, no Node.js required.
+  #
+  # Returns a {Result} containing:
+  # - +symbol_index+  — map of exported symbol name → shared require path
+  # - +controller_usages+ — map of controller name → sorted array of referenced shared files
+  # - +warnings+ — non-fatal issues found during scanning
   #
   # Phase 1 — builds a symbol index from shared dirs:
   #   "PrimaryButton" => "ux/components/buttons/primary_button"
@@ -13,23 +16,34 @@ module ReactManifest
   #
   # Phase 3 — emits non-fatal warnings.
   class Scanner
-    # Patterns to detect symbol definitions (no import/export in this codebase)
+    # Patterns to detect symbol definitions (CommonJS and ES module style)
     DEFINITION_PATTERNS = [
-      /(?:const|let|var)\s+([A-Z][A-Za-z0-9_]*)\s*=/,        # const FooBar =
-      /function\s+([A-Z][A-Za-z0-9_]*)\s*\(/,                 # function FooBar(
-      /class\s+([A-Z][A-Za-z0-9_]*)\s*(?:extends|\{)/,        # class FooBar
-      /(?:const|let|var)\s+(use[A-Z][A-Za-z0-9_]*)\s*=/,     # const useFoo = (hooks)
-      /function\s+(use[A-Z][A-Za-z0-9_]*)\s*\(/,              # function useFoo(
-      /(?:const|let|var)\s+([a-z][A-Za-z0-9_]{2,})\s*=\s*(?:function|\()/,  # const formatDate = function/arrow
-      /^function\s+([a-z][A-Za-z0-9_]{2,})\s*\(/,            # function formatDate( at line start
+      # CommonJS / variable-assignment style
+      /(?:const|let|var)\s+([A-Z][A-Za-z0-9_]*)\s*=/, # const FooBar =
+      /function\s+([A-Z][A-Za-z0-9_]*)\s*\(/,                                       # function FooBar(
+      /class\s+([A-Z][A-Za-z0-9_]*)\s*(?:extends|\{)/,                              # class FooBar
+      /(?:const|let|var)\s+(use[A-Z][A-Za-z0-9_]*)\s*=/, # const useFoo = (hooks)
+      /function\s+(use[A-Z][A-Za-z0-9_]*)\s*\(/, # function useFoo(
+      /(?:const|let|var)\s+([a-z][A-Za-z0-9_]{2,})\s*=\s*(?:function|\()/, # const formatDate = function/arrow
+      /^function\s+([a-z][A-Za-z0-9_]{2,})\s*\(/, # function formatDate( at line start
+
+      # ES module style (export default / named exports)
+      /^export\s+default\s+(?:function|class)\s+([A-Z][A-Za-z0-9_]*)/,             # export default function Foo
+      /^export\s+default\s+(?:function|class)\s+(use[A-Z][A-Za-z0-9_]*)/,          # export default function useFoo
+      /^export\s+(?:const|let|var)\s+([A-Z][A-Za-z0-9_]*)\s*=/,                    # export const Foo =
+      /^export\s+(?:const|let|var)\s+(use[A-Z][A-Za-z0-9_]*)\s*=/,                 # export const useFoo =
+      /^export\s+(?:const|let|var)\s+([a-z][A-Za-z0-9_]{2,})\s*=\s*(?:function|\()/, # export const formatDate =
+      /^export\s+function\s+([A-Z][A-Za-z0-9_]*)\s*\(/,                             # export function Foo(
+      /^export\s+function\s+(use[A-Z][A-Za-z0-9_]*)\s*\(/,                          # export function useFoo(
+      /^export\s+class\s+([A-Z][A-Za-z0-9_]*)\s*(?:extends|\{)/ # export class Foo
     ].freeze
 
     # Patterns to detect usage in controller files
-    JSX_ELEMENT_PATTERN      = /<([A-Z][A-Za-z0-9_]*)[\s\/>]/.freeze
-    REACT_CREATE_PATTERN     = /React\.createElement\(\s*([A-Z][A-Za-z0-9_]*)[\s,)]/.freeze
-    HOOK_CALL_PATTERN        = /\b(use[A-Z][A-Za-z0-9_]*)\s*\(/.freeze
+    JSX_ELEMENT_PATTERN      = %r{<([A-Z][A-Za-z0-9_]*)[\s/>]}
+    REACT_CREATE_PATTERN     = /React\.createElement\(\s*([A-Z][A-Za-z0-9_]*)[\s,)]/
+    HOOK_CALL_PATTERN        = /\b(use[A-Z][A-Za-z0-9_]*)\s*\(/
     # Lib calls matched against known lib symbols to reduce false positives
-    LIB_CALL_PATTERN         = /\b([a-z][A-Za-z0-9_]{2,})\s*\(/.freeze
+    LIB_CALL_PATTERN         = /\b([a-z][A-Za-z0-9_]{2,})\s*\(/
 
     # Common JS built-ins to exclude from lib-call matching
     JS_BUILTINS = %w[
@@ -66,9 +80,7 @@ module ReactManifest
         end
       end
 
-      if @config.verbose?
-        $stdout.puts "[ReactManifest] Shared symbol index: #{symbol_index.size} symbols indexed"
-      end
+      $stdout.puts "[ReactManifest] Shared symbol index: #{symbol_index.size} symbols indexed" if @config.verbose?
 
       # Phase 2: scan controller dirs for usage
       controller_usages = {}
@@ -77,45 +89,44 @@ module ReactManifest
         files   = js_files_in(ctrl[:path])
         used    = Set.new
 
-        if files.empty? && @config.verbose?
-          warnings << "Controller dir '#{ctrl[:name]}' has no JS/JSX files"
-        end
+        warnings << "Controller dir '#{ctrl[:name]}' has no JS/JSX files" if files.empty? && @config.verbose?
 
         files.each do |file_path|
           validate_naming(file_path, ctrl[:name], warnings)
-          content = File.read(file_path, encoding: "utf-8")
+          begin
+            content = File.read(file_path, encoding: "utf-8")
+          rescue Errno::ENOENT, Errno::EACCES => e
+            warnings << "Skipping #{file_path}: #{e.message}"
+            next
+          rescue Encoding::InvalidByteSequenceError
+            warnings << "Skipping #{file_path}: not valid UTF-8"
+            next
+          end
 
           # JSX element usage: <PrimaryButton (JSX tag syntax)
           content.scan(JSX_ELEMENT_PATTERN) do |match|
             sym = match[0]
-            if symbol_index.key?(sym)
-              used << symbol_index[sym]
-            end
+            used << symbol_index[sym] if symbol_index.key?(sym)
           end
 
           # React.createElement(PrimaryButton, ...) (non-JSX style)
           content.scan(REACT_CREATE_PATTERN) do |match|
             sym = match[0]
-            if symbol_index.key?(sym)
-              used << symbol_index[sym]
-            end
+            used << symbol_index[sym] if symbol_index.key?(sym)
           end
 
           # Hook calls: useFetch(
           content.scan(HOOK_CALL_PATTERN) do |match|
             sym = match[0]
-            if symbol_index.key?(sym)
-              used << symbol_index[sym]
-            end
+            used << symbol_index[sym] if symbol_index.key?(sym)
           end
 
           # Lib function calls: formatDate( — filtered against lib symbol index
           content.scan(LIB_CALL_PATTERN) do |match|
             sym = match[0]
             next if JS_BUILTINS.include?(sym)
-            if symbol_index.key?(sym)
-              used << symbol_index[sym]
-            end
+
+            used << symbol_index[sym] if symbol_index.key?(sym)
           end
         end
 
@@ -126,9 +137,9 @@ module ReactManifest
       emit_fanout_warnings(controller_usages, warnings)
 
       Result.new(
-        symbol_index:       symbol_index,
-        controller_usages:  controller_usages,
-        warnings:           warnings
+        symbol_index: symbol_index,
+        controller_usages: controller_usages,
+        warnings: warnings
       )
     end
 
@@ -136,10 +147,11 @@ module ReactManifest
 
     def js_files_in(dir)
       return [] unless Dir.exist?(dir)
-      Dir.glob(File.join(dir, "**", "*.{js,js.jsx}"))
-        .reject { |f| File.directory?(f) }
-        .reject { |f| excluded_path?(f) }
-        .sort
+
+      Dir.glob(File.join(dir, "**", @config.extensions_glob))
+         .reject { |f| File.directory?(f) }
+         .reject { |f| excluded_path?(f) }
+         .sort
     end
 
     # Returns true if the file path contains a segment matching any exclude_path.
@@ -149,7 +161,11 @@ module ReactManifest
     end
 
     def extract_definitions(file_path)
-      content = File.read(file_path, encoding: "utf-8")
+      begin
+        content = File.read(file_path, encoding: "utf-8")
+      rescue Errno::ENOENT, Errno::EACCES, Encoding::InvalidByteSequenceError
+        return []
+      end
       symbols = []
       DEFINITION_PATTERNS.each do |pattern|
         content.scan(pattern) { |m| symbols << m[0] }
@@ -168,10 +184,10 @@ module ReactManifest
     def validate_naming(file_path, ctrl_name, warnings)
       basename = File.basename(file_path, ".*").sub(/\.js$/, "")
       # Expected: <controller>_index, <controller>_show, <controller>_form, etc.
-      unless basename.start_with?("#{ctrl_name}_") || basename == ctrl_name
-        warnings << "File '#{File.basename(file_path)}' in '#{ctrl_name}' does not follow " \
-                    "'#{ctrl_name}_<action>.js.jsx' naming convention"
-      end
+      return if basename.start_with?("#{ctrl_name}_") || basename == ctrl_name
+
+      warnings << "File '#{File.basename(file_path)}' in '#{ctrl_name}' does not follow " \
+                  "'#{ctrl_name}_<action>.js.jsx' naming convention"
     end
 
     def emit_fanout_warnings(controller_usages, warnings)
