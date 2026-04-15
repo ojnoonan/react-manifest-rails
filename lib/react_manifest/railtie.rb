@@ -10,7 +10,8 @@ module ReactManifest
       next unless Rails.env.development?
 
       config = ReactManifest.configuration
-      missing = self.class.missing_manifest_bundles(config)
+      # Private class method: call via send from the initializer instance context.
+      missing = self.class.send(:missing_manifest_bundles, config)
       next if missing.empty?
 
       message = "[ReactManifest] Missing manifests on boot: #{missing.join(', ')}. Generating now..."
