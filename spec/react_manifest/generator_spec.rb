@@ -14,7 +14,7 @@ RSpec.describe ReactManifest::Generator do
   end
 
   def output_dir
-    config.abs_output_dir
+    config.abs_manifest_dir
   end
 
   def read_manifest(name)
@@ -138,7 +138,7 @@ RSpec.describe ReactManifest::Generator do
     end
 
     it "does not touch application.js" do
-      app_path = File.join(output_dir, "application.js")
+      app_path = File.join(config.abs_output_dir, "application.js")
       mtime = File.mtime(app_path)
       sleep 0.01
       generator.run!

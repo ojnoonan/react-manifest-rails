@@ -20,6 +20,10 @@ RSpec.describe ReactManifest::Configuration do
       expect(config.output_dir).to eq("app/assets/javascripts")
     end
 
+    it "sets manifest_subdir" do
+      expect(config.manifest_subdir).to eq("ux_manifests")
+    end
+
     it "sets shared_bundle" do
       expect(config.shared_bundle).to eq("ux_shared")
     end
@@ -68,6 +72,13 @@ RSpec.describe ReactManifest::Configuration do
     it "returns absolute path under Rails.root" do
       expect(config.abs_output_dir).to start_with(Rails.root.to_s)
       expect(config.abs_output_dir).to end_with("app/assets/javascripts")
+    end
+  end
+
+  describe "#abs_manifest_dir" do
+    it "returns absolute manifest directory under output_dir" do
+      expect(config.abs_manifest_dir).to start_with(Rails.root.to_s)
+      expect(config.abs_manifest_dir).to end_with("app/assets/javascripts/ux_manifests")
     end
   end
 

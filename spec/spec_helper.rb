@@ -96,19 +96,21 @@ module ReactManifest
     end
 
     def resolve_bundles(ctrl_name)
-      config  = configuration
-      output  = config.abs_output_dir
+      config = configuration
       bundles = []
 
-      bundles << config.shared_bundle if bundle_exists?(output, config.shared_bundle)
+      shared = resolve_bundle_reference(config, config.shared_bundle)
+      bundles << shared if shared
 
       config.always_include.each do |b|
-        bundles << b if bundle_exists?(output, b) && !bundles.include?(b)
+        resolved = resolve_bundle_reference(config, b)
+        bundles << resolved if resolved && !bundles.include?(resolved)
       end
 
       controller_candidates(ctrl_name).each do |candidate|
-        if bundle_exists?(output, candidate) && !bundles.include?(candidate)
-          bundles << candidate
+        resolved = resolve_bundle_reference(config, candidate)
+        if resolved && !bundles.include?(resolved)
+          bundles << resolved
           break
         end
       end
@@ -118,8 +120,14 @@ module ReactManifest
 
     private
 
-    def bundle_exists?(output_dir, bundle_name)
-      File.exist?(File.join(output_dir, "#{bundle_name}.js"))
+    def resolve_bundle_reference(config, bundle_name)
+      manifest_path = File.join(config.abs_manifest_dir, "#{bundle_name}.js")
+      return bundle_name if File.exist?(manifest_path)
+
+      legacy_path = File.join(config.abs_output_dir, "#{bundle_name}.js")
+      return bundle_name if File.exist?(legacy_path)
+
+      nil
     end
 
     def controller_candidates(ctrl_name)
@@ -153,6 +161,7 @@ module FixtureHelpers
       c.ux_root    = "app/assets/javascripts/ux"
       c.app_dir    = "app"
       c.output_dir = "app/assets/javascripts"
+      c.manifest_subdir = "ux_manifests"
       c.dry_run    = false
       c.verbose    = false
     end

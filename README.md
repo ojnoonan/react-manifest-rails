@@ -42,6 +42,7 @@ ReactManifest.configure do |config|
   config.ux_root = "app/assets/javascripts/ux"
   config.app_dir = "app"
   config.output_dir = "app/assets/javascripts"
+  config.manifest_subdir = "ux_manifests"
   config.shared_bundle = "ux_shared"
   config.always_include = []
   config.ignore = []
@@ -107,6 +108,8 @@ In development:
 
 - `ux_shared.js`: shared files outside `ux/app/`
 - `ux_<controller>.js`: one bundle per directory under `ux/app/`
+- Generated manifests are written to `app/assets/javascripts/ux_manifests/` by default.
+- Existing legacy `app/assets/javascripts/ux_*.js` files are moved automatically on generation.
 
 Example:
 - `ux/app/users/...` -> `ux_users.js`

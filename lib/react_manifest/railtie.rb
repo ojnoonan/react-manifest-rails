@@ -35,6 +35,12 @@ module ReactManifest
     # Expose config as Rails.application.config.react_manifest
     config.react_manifest = ReactManifest.configuration
 
+    # Keep generated manifests in a dedicated folder while preserving logical
+    # asset names (ux_shared, ux_users, etc.) via an explicit Sprockets path.
+    initializer "react_manifest.assets_path" do |app|
+      app.config.assets.paths << ReactManifest.configuration.abs_manifest_dir if app.config.respond_to?(:assets)
+    end
+
     # ----------------------------------------------------------------
     # Start the file watcher in development
     # ----------------------------------------------------------------
@@ -78,9 +84,9 @@ module ReactManifest
       private
 
       def missing_manifest_bundles(config)
-        output_dir = config.abs_output_dir
         expected_manifest_bundles(config).reject do |bundle_name|
-          File.exist?(File.join(output_dir, "#{bundle_name}.js"))
+          File.exist?(File.join(config.abs_manifest_dir, "#{bundle_name}.js")) ||
+            File.exist?(File.join(config.abs_output_dir, "#{bundle_name}.js"))
         end
       end
 

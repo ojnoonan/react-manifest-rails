@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.7] - 2026-04-15
+
+### Added
+- Generated manifests now live in a dedicated folder (`app/assets/javascripts/ux_manifests` by default) to keep `app/assets/javascripts` tidy.
+- Automatic migration of legacy `ux_*.js` files from `output_dir` root into the manifest folder during generation.
+
+### Changed
+- Added `config.manifest_subdir` (default: `ux_manifests`) for explicit control over generated manifest placement.
+- `react_manifest:clean` now removes auto-generated manifests from both the dedicated manifest folder and legacy root location.
+- README and inline configuration docs updated to explain the clean manifest directory behavior.
+
 ## [0.2.6] - 2026-04-15
 
 ### Fixed

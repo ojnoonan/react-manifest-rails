@@ -17,6 +17,10 @@ module ReactManifest
     # Where generated ux_*.js manifests are written (relative to Rails.root)
     attr_accessor :output_dir
 
+    # Subdirectory under output_dir that holds generated ux_*.js manifests.
+    # Keeping generated files out of output_dir root avoids clutter.
+    attr_accessor :manifest_subdir
+
     # Bundle name for auto-generated shared bundle (all non-app/ dirs)
     attr_accessor :shared_bundle
 
@@ -54,6 +58,7 @@ module ReactManifest
       @ux_root           = "app/assets/javascripts/ux"
       @app_dir           = "app"
       @output_dir        = "app/assets/javascripts"
+      @manifest_subdir   = "ux_manifests"
       @shared_bundle     = "ux_shared"
       @always_include    = []
       @ignore            = []
@@ -98,6 +103,17 @@ module ReactManifest
 
     def abs_output_dir
       Rails.root.join(output_dir).to_s
+    end
+
+    def abs_manifest_dir
+      subdir = normalized_manifest_subdir
+      return abs_output_dir if subdir.empty?
+
+      File.join(abs_output_dir, subdir)
+    end
+
+    def normalized_manifest_subdir
+      manifest_subdir.to_s.gsub(%r{\A/+|/+\z}, "")
     end
   end
 end

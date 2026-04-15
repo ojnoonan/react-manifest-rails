@@ -48,6 +48,8 @@ module ReactManifest
       manifests << build_shared(classification.shared_dirs)
       classification.controller_dirs.each { |ctrl| manifests << build_controller(ctrl) }
 
+      migrate_legacy_manifests!
+
       # Phase 2: write — each write is atomic (tmp + rename).
       results = manifests.map { |m| write_manifest(m[:filename], m[:content]) }
 
@@ -96,7 +98,7 @@ module ReactManifest
     # --------------------------------------------------------------- write
 
     def write_manifest(filename, content)
-      dest = File.join(@config.abs_output_dir, filename)
+      dest = File.join(@config.abs_manifest_dir, filename)
 
       # Safety: never touch files not bearing our AUTO-GENERATED header
       # (unless they don't exist yet)
@@ -129,6 +131,31 @@ module ReactManifest
       end
 
       { path: dest, status: :written }
+    end
+
+    def migrate_legacy_manifests!
+      legacy_dir   = @config.abs_output_dir
+      manifest_dir = @config.abs_manifest_dir
+      return if legacy_dir == manifest_dir
+
+      legacy_files = Dir.glob(File.join(legacy_dir, "ux_*.js"))
+      return if legacy_files.empty?
+
+      if @config.dry_run?
+        legacy_files.each do |legacy|
+          target = File.join(manifest_dir, File.basename(legacy))
+          $stdout.puts "[ReactManifest] DRY-RUN: would move #{legacy} -> #{target}"
+        end
+        return
+      end
+
+      FileUtils.mkdir_p(manifest_dir)
+      legacy_files.each do |legacy|
+        target = File.join(manifest_dir, File.basename(legacy))
+        next if File.exist?(target)
+
+        FileUtils.mv(legacy, target)
+      end
     end
 
     # ----------------------------------------------------------- helpers
