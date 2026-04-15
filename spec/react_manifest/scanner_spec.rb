@@ -34,6 +34,17 @@ RSpec.describe ReactManifest::Scanner do
       expect(result.symbol_index["useFetch"]).to end_with("ux/hooks/use_fetch")
       expect(result.symbol_index["formatDate"]).to end_with("ux/lib/format_date")
     end
+
+    it "indexes ES module exports from shared files" do
+      expect(result.symbol_index.keys).to include("StatusBadge", "usePrefetch", "pluralizeWords")
+      expect(result.symbol_index["StatusBadge"]).to end_with("ux/components/indicators/status_badge")
+      expect(result.symbol_index["usePrefetch"]).to end_with("ux/hooks/use_prefetch")
+      expect(result.symbol_index["pluralizeWords"]).to end_with("ux/lib/pluralize_words")
+    end
+
+    it "warns when duplicate shared symbols are defined" do
+      expect(result.warnings.any? { |w| w.include?("Duplicate symbol 'PrimaryButton'") }).to be true
+    end
   end
 
   describe "Phase 2: controller usage detection" do
@@ -75,6 +86,22 @@ RSpec.describe ReactManifest::Scanner do
       end
     end
 
+    context "products controller" do
+      let(:products_usage) { result.controller_usages["products"] }
+
+      it "detects ES module component usage" do
+        expect(products_usage.any? { |f| f.include?("status_badge") }).to be true
+      end
+
+      it "detects ES module hook usage" do
+        expect(products_usage.any? { |f| f.include?("use_prefetch") }).to be true
+      end
+
+      it "detects ES module lib function usage" do
+        expect(products_usage.any? { |f| f.include?("pluralize_words") }).to be true
+      end
+    end
+
     it "usage lists are sorted" do
       result.controller_usages.each_value do |files|
         expect(files).to eq(files.sort)
@@ -90,6 +117,17 @@ RSpec.describe ReactManifest::Scanner do
 
       result = scanner.scan(classifier.classify)
       expect(result.warnings.any? { |w| w.include?("naming convention") }).to be true
+    end
+
+    it "warns when a shared file is used by many controllers" do
+      result = scanner.scan(classifier.classify)
+      expect(result.warnings.any? { |w| w.include?("High fan-out") && w.include?("primary_button") }).to be true
+    end
+
+    it "does not infer dynamic React.createElement symbols" do
+      result = scanner.scan(classifier.classify)
+      products_usage = result.controller_usages["products"]
+      expect(products_usage.any? { |f| f.include?("icon_button") }).to be false
     end
   end
 

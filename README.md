@@ -2,144 +2,183 @@
 
 Generate per-controller Sprockets manifests for React code in Rails.
 
-This gem creates `ux_*.js` bundles and includes them with `react_bundle_tag`.
+Instead of one monolithic `application.js`, each controller gets a lean `ux_<controller>.js` bundle that only loads what it needs. Shared components, hooks, and libraries are automatically bundled into a single `ux_shared.js` included on every page.
 
-## Quick Start (Development)
+## Quick Start
 
-1. Add gems:
+### 1. Add to Gemfile
 
 ```ruby
-# Gemfile
 gem "react-manifest-rails"
 
 group :development do
-  gem "listen", "~> 3.0"
+  gem "listen", "~> 3.0"  # optional — enables auto-regeneration on file change
 end
 ```
-
-2. Install:
 
 ```bash
 bundle install
 ```
 
-If your app uses this standard layout, you can keep defaults and only create the initializer if you want overrides:
-
-```text
-ux_root:     app/assets/javascripts/ux
-app_dir:     app
-output_dir:  app/assets/javascripts
-extensions:  js, jsx
-```
-
-3. Add initializer:
+### 2. Add initializer
 
 ```ruby
 # config/initializers/react_manifest.rb
-require "react_manifest"
-
 ReactManifest.configure do |config|
-  config.ux_root = "app/assets/javascripts/ux"
-  config.app_dir = "app"
+  # All defaults shown — only override what you need to change.
+  config.ux_root    = "app/assets/javascripts/ux"
+  config.app_dir    = "app"
   config.output_dir = "app/assets/javascripts"
-  config.manifest_subdir = "ux_manifests"
-  config.shared_bundle = "ux_shared"
-  config.always_include = []
-  config.ignore = []
-  config.exclude_paths = ["react", "react_dev", "vendor"]
-  config.size_threshold_kb = 500
-  config.dry_run = false
-  config.verbose = false
-  config.stdout_logging = true
 end
 ```
 
-4. Put React files under:
+### 3. Run setup
+
+```bash
+bundle exec rails react_manifest:setup
+```
+
+This one command:
+- Patches `application.js` to remove globally-required React files (they'll be per-controller instead)
+- Patches `app/assets/config/manifest.js` to add the `link_tree` directive Sprockets needs to compile the bundles
+- Patches your layout(s) to insert `react_bundle_tag`
+- Generates the initial `ux_*.js` manifests
+
+Preview changes without writing anything:
+
+```bash
+DRY_RUN=1 bundle exec rails react_manifest:setup
+```
+
+### 4. Organise your React files
 
 ```text
 app/assets/javascripts/ux/
   app/
-    users/
+    users/          → compiled into ux_users.js
       users_index.jsx
-  components/
+    dashboard/      → compiled into ux_dashboard.js
+      dashboard.jsx
+  components/       → compiled into ux_shared.js (included on every page)
     nav.jsx
+    button.jsx
+  hooks/            → also goes into ux_shared.js
+    use_modal.js
+  lib/              → also goes into ux_shared.js
+    helpers.js
 ```
 
-5. Include bundles in your layout:
-
-```erb
-<%= react_bundle_tag defer: true %>
-```
-
-6. Start server:
+### 5. Start the server
 
 ```bash
 bundle exec rails s
 ```
 
 In development:
-- If expected `ux_*.js` files are missing, the gem generates them once on boot.
-- If `listen` is installed, file changes regenerate manifests automatically.
-- If `listen` is missing, run `bundle exec rails react_manifest:generate` manually.
-- Set `config.stdout_logging = false` to silence ReactManifest console lines while keeping Rails logger output.
+- Missing `ux_*.js` files are generated automatically on boot.
+- If `listen` is installed, saving any file under `ux/` regenerates affected manifests instantly.
+- Without `listen`, run `bundle exec rails react_manifest:generate` after adding files.
 
-## Configuration Notes
+## How Bundle Inclusion Works
 
-- `ignore`:
-  - Skips controller directory names directly under `ux/app/`.
-  - Example: `ignore = ["admin"]` skips `ux/app/admin/*`.
+Generation is **directory-based** — deterministic and conservative by design.
 
-- `exclude_paths`:
-  - Excludes files by matching path segments while scanning the `ux_root` tree.
-  - Example: `exclude_paths = ["vendor"]` excludes `ux/vendor/*` and any nested `.../vendor/...` segment.
-  - This is not based on what is included in `application.js`.
+- `ux_shared.js`: every file from directories outside `ux/app/` (i.e. `components/`, `hooks/`, `lib/`, etc.)
+- `ux_<controller>.js`: `ux_shared` + every file under `ux/app/<controller>/`
 
-- `dry_run`:
-  - Preview mode only; computes and prints changes but writes no files.
+Namespace fallback for nested controllers: `admin/reports/summary` tries `ux_admin_reports_summary`, then `ux_admin_reports`, then `ux_admin`, then `ux_summary`. The most specific match wins.
 
-- `verbose` vs `stdout_logging`:
-  - `verbose`: extra diagnostic detail.
-  - `stdout_logging`: whether ReactManifest status lines are printed to terminal stdout.
-
-- Scope:
-  - Manifest generation only scans files under `ux_root`.
+The gem's scanner uses regex to detect which shared symbols are referenced in each controller directory (for the `react_manifest:analyze` report). Generation itself stays directory-based to avoid brittle runtime misses from dynamic component references.
 
 ## What Gets Generated
 
-- `ux_shared.js`: shared files outside `ux/app/`
-- `ux_<controller>.js`: one bundle per directory under `ux/app/`
-- Generated manifests are written to `app/assets/javascripts/ux_manifests/` by default.
-- Existing legacy `app/assets/javascripts/ux_*.js` files are moved automatically on generation.
+```
+app/assets/javascripts/ux_manifests/   ← generated; do not edit
+  ux_shared.js
+  ux_users.js
+  ux_dashboard.js
+  ...
+```
 
-Example:
-- `ux/app/users/...` -> `ux_users.js`
-- `ux/app/admin/...` -> `ux_admin.js`
+Files carry an `AUTO-GENERATED` header. Any file without it is never overwritten — you can pin a manifest by removing the header.
+
+Writes are atomic (temp file + rename) and idempotent (SHA-256 comparison skips unchanged files).
+
+## Asset Compilation & Minification
+
+The generated files are standard Sprockets manifests — `//= require` directives only. Sprockets processes them identically to `application.js`:
+
+- **Development**: concatenated and served from memory.
+- **Production** (`assets:precompile`): concatenated, minified (with whatever JS compressor your app uses — `uglifier`/`mini_racer`, `terser`, libv8, etc.), digested, and gzipped.
+
+The gem hooks into `assets:precompile` as a prerequisite, so manifest generation always runs before Sprockets begins compiling.
+
+## Configuration
+
+```ruby
+ReactManifest.configure do |config|
+  config.ux_root          = "app/assets/javascripts/ux"
+  config.app_dir          = "app"          # subdirectory of ux_root containing per-controller dirs
+  config.output_dir       = "app/assets/javascripts"
+  config.manifest_subdir  = "ux_manifests" # subdirectory of output_dir for generated files
+  config.shared_bundle    = "ux_shared"
+  config.extensions       = %w[js jsx]     # add ts tsx for TypeScript
+  config.always_include   = []             # extra shared files always added to every bundle
+  config.ignore           = []             # controller dir names to skip entirely
+  config.exclude_paths    = ["react", "react_dev", "vendor"]  # path segments to exclude
+  config.size_threshold_kb = 500           # warn if a bundle exceeds this
+  config.dry_run          = false          # never write; only print what would change
+  config.verbose          = false          # extra diagnostic detail
+  config.stdout_logging   = true           # print status lines to terminal
+end
+```
+
+### Key option notes
+
+- **`ignore`**: skips entire controller dirs under `ux/app/`. `ignore = ["admin"]` excludes `ux/app/admin/`.
+- **`exclude_paths`**: excludes files whose path contains any listed segment. Not based on `application.js`.
+- **`dry_run`**: also honoured by `DRY_RUN=1` environment variable at runtime.
+- **`extensions`**: add `ts` and `tsx` to enable TypeScript source detection.
 
 ## Commands
 
-- Generate manifests now:
-
 ```bash
+# First-time setup (patches application.js, manifest.js, layouts; generates manifests)
+bundle exec rails react_manifest:setup
+
+# Regenerate all manifests
 bundle exec rails react_manifest:generate
-```
 
-- Watch in foreground (debugging only; not required in normal dev):
+# Preview any command without writing
+DRY_RUN=1 bundle exec rails react_manifest:setup
+DRY_RUN=1 bundle exec rails react_manifest:generate
 
-```bash
-bundle exec rails react_manifest:watch
-```
+# Analyse which shared symbols are used per controller
+bundle exec rails react_manifest:analyze
 
-- Print bundle size report:
-
-```bash
+# Print bundle size report
 bundle exec rails react_manifest:report
+
+# Watch for changes in foreground (debugging only — dev server already does this)
+bundle exec rails react_manifest:watch
+
+# Remove all generated manifests
+bundle exec rails react_manifest:clean
 ```
 
 ## Troubleshooting
 
-### `react_manifest:generate` is not recognized
+### `AssetNotPrecompiledError` for `ux_*.js`
 
-Run:
+Sprockets 4 requires an explicit `link_tree` directive to compile files from non-standard paths. Run setup (or manually add the directive):
+
+```bash
+bundle exec rails react_manifest:setup
+```
+
+This adds `//= link_tree ../javascripts/ux_manifests .js` to `app/assets/config/manifest.js`.
+
+### `react_manifest` tasks not found
 
 ```bash
 bundle exec rails -T | grep react_manifest
@@ -147,28 +186,30 @@ bundle exec rails -T | grep react_manifest
 
 If nothing appears:
 - Confirm the gem is in `Gemfile` and installed (`bundle show react-manifest-rails`).
-- Ensure the gem is not disabled with `require: false`.
-- Restart Spring/server (`bin/spring stop`, then re-run command).
+- Ensure it is not loaded with `require: false`.
+- Restart Spring: `bin/spring stop`.
 
-### Server starts but nothing happens
+### Server starts but no bundles are served
 
-Check these in order:
-- `app/assets/javascripts/ux` exists.
-- Your controller files are under `ux/app/<controller>/`.
-- Your layout includes `<%= react_bundle_tag %>`.
-- Run `bundle exec rails react_manifest:generate` once and check for generated `ux_*.js` in `app/assets/javascripts`.
+Check in order:
+1. `app/assets/javascripts/ux/` exists.
+2. Controller files are under `ux/app/<controller>/`.
+3. Your layout includes `<%= react_bundle_tag %>`.
+4. Run `bundle exec rails react_manifest:generate` and confirm files appear in `ux_manifests/`.
+5. Confirm `app/assets/config/manifest.js` contains the `link_tree` directive (run setup again if missing).
 
-### Auto-watch in dev does not run
+### Auto-watch not running in development
 
-- Ensure `listen` is in the development group.
-- Restart the Rails server after adding `listen`.
-- If you choose not to install `listen`, manual generation is the supported fallback.
+- Add `listen` to the development group in your Gemfile and `bundle install`.
+- Restart the Rails server.
+- Without `listen`, run `react_manifest:generate` manually after making changes.
 
 ## Compatibility
 
 - Ruby: 3.2+
-- Rails/Railties: 7.x to 8.x
-- Asset pipeline: Sprockets
+- Rails: 7.x – 8.x
+- Asset pipeline: Sprockets 3 and 4
+- JS compressors: uglifier / mini_racer, terser, libv8 / therubyracer — all work transparently
 
 ## License
 

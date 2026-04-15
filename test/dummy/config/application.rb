@@ -16,7 +16,6 @@ module Dummy
     config.assets.enabled = true
     config.assets.version = "1.0"
 
-    # Precompile per-controller ux bundles
-    config.assets.precompile += Dir["app/assets/javascripts/ux_*.js"].map { |f| File.basename(f) }
+    # react-manifest-rails handles ux_*.js precompile registration via its Railtie.
   end
 end

@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.9] - 2026-04-15
+
+### Added
+- `rails react_manifest:setup` — one-command onboarding that patches `application.js`, `manifest.js`, and layout files, then generates initial bundles. Supports `DRY_RUN=1` preview mode.
+- `ReactManifest::LayoutPatcher` — automatically inserts `react_bundle_tag` into ERB, HAML, and Slim layouts after `javascript_include_tag`, with `</head>` fallback. Preserves indentation and is idempotent.
+- `ReactManifest::SprocketsManifestPatcher` — adds the `//= link_tree ../javascripts/ux_manifests .js` directive to `app/assets/config/manifest.js` so Sprockets 4 compiles the generated bundles.
+
+### Fixed
+- Removed a `Proc` from `config.assets.precompile` that crashed Sprockets 4.2+ with `NoMethodError: undefined method 'start_with?' for an instance of Proc`. The `link_tree` directive (handled by `SprocketsManifestPatcher`) is the correct mechanism.
+
+### Changed
+- `react_manifest:generate` now warns if the Sprockets manifest has not yet been patched.
+- README rewritten with a streamlined Quick Start centred on `react_manifest:setup`.
+- Confirmed full production asset pipeline compatibility: all ux bundles compile, minify, digest, and gzip correctly via `assets:precompile` with any standard JS compressor (uglifier/mini_racer, terser, libv8).
+
 ## [0.2.8] - 2026-04-15
 
 ### Fixed

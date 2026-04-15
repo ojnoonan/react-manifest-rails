@@ -5,3 +5,5 @@ tmp/
 public/assets/
 node_modules/
 .bundle/
+app/assets/javascripts/ux_manifests/
+app/assets/javascripts/*.bak

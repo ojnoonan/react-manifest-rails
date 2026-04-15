@@ -1,58 +1,8 @@
+// Vendor libraries — loaded on every page.
+// React app code is now served per-controller via react_bundle_tag.
+// Managed by react-manifest-rails — do not add require_tree.
+
 // application.js — monolithic manifest (the "before" state for migration demos).
 // In a real app this would also require jquery, react, etc.
 // UX code below is what react-manifest-rails replaces with per-controller bundles.
 //
-//= require ./ux/lib/api_helpers
-//= require ./ux/lib/format_date
-//= require ./ux/lib/format_currency
-//= require ./ux/lib/validation
-//= require ./ux/lib/router_helpers
-//= require ./ux/lib/permissions
-//= require ./ux/hooks/use_fetch
-//= require ./ux/hooks/use_pagination
-//= require ./ux/hooks/use_modal
-//= require ./ux/hooks/use_form
-//= require ./ux/hooks/use_debounce
-//= require ./ux/hooks/use_local_storage
-//= require ./ux/hooks/use_permissions
-//= require ./ux/components/buttons/primary_button
-//= require ./ux/components/buttons/icon_button
-//= require ./ux/components/buttons/danger_button
-//= require ./ux/components/buttons/link_button
-//= require ./ux/components/forms/text_input
-//= require ./ux/components/forms/select_input
-//= require ./ux/components/forms/checkbox_input
-//= require ./ux/components/forms/date_picker
-//= require ./ux/components/forms/file_upload
-//= require ./ux/components/layout/page_header
-//= require ./ux/components/layout/sidebar
-//= require ./ux/components/layout/breadcrumbs
-//= require ./ux/components/layout/modal
-//= require ./ux/components/layout/drawer
-//= require ./ux/components/data/data_table
-//= require ./ux/components/data/pagination
-//= require ./ux/components/data/sort_header
-//= require ./ux/components/data/empty_state
-//= require ./ux/components/feedback/alert
-//= require ./ux/components/feedback/toast
-//= require ./ux/components/feedback/spinner
-//= require ./ux/components/feedback/badge
-//= require ./ux/app/dashboard/dashboard_index
-//= require ./ux/app/users/users_index
-//= require ./ux/app/users/users_show
-//= require ./ux/app/users/users_edit
-//= require ./ux/app/notifications/notifications_index
-//= require ./ux/app/notifications/notifications_show
-//= require ./ux/app/orders/orders_index
-//= require ./ux/app/orders/orders_show
-//= require ./ux/app/orders/orders_new
-//= require ./ux/app/products/products_index
-//= require ./ux/app/products/products_show
-//= require ./ux/app/reports/reports_index
-//= require ./ux/app/settings/settings_index
-//= require ./ux/app/auth/auth_login
-//= require ./ux/app/auth/auth_register
-//= require ./ux/app/admin/dashboard/admin_dashboard_index
-//= require ./ux/app/admin/dashboard/admin_dashboard_show
-//= require ./ux/app/admin/users/admin_users_index
-//= require ./ux/app/admin/users/admin_users_form

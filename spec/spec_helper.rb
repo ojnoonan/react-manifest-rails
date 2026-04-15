@@ -76,6 +76,8 @@ require "react_manifest/dependency_map"
 require "react_manifest/generator"
 require "react_manifest/application_analyzer"
 require "react_manifest/application_migrator"
+require "react_manifest/layout_patcher"
+require "react_manifest/sprockets_manifest_patcher"
 require "react_manifest/watcher"
 require "react_manifest/reporter"
 require "react_manifest/view_helpers"
@@ -169,10 +171,13 @@ module FixtureHelpers
   end
 
   def copy_fixtures_to(tmpdir)
-    src = File.expand_path("fixtures/dummy/app/assets/javascripts", __dir__)
-    dst = File.join(tmpdir, "app/assets/javascripts")
-    FileUtils.mkdir_p(dst)
-    FileUtils.cp_r(Dir.glob("#{src}/*"), dst)
+    # Copy all fixture app/ subdirs (assets/javascripts, views, etc.) into tmpdir
+    src_app = File.expand_path("fixtures/dummy/app", __dir__)
+    dst_app = File.join(tmpdir, "app")
+    FileUtils.mkdir_p(dst_app)
+    Dir.glob("#{src_app}/*/").each do |subdir|
+      FileUtils.cp_r(subdir, dst_app)
+    end
   end
 end
 
