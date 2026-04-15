@@ -18,8 +18,8 @@ module FakeRails
       @path = Pathname.new(path)
     end
 
-    def join(*)
-      @path.join(*)
+    def join(*args)
+      @path.join(*args)
     end
 
     def to_s
@@ -140,7 +140,7 @@ module FixtureHelpers
   FIXTURE_UX_ROOT = File.expand_path("fixtures/dummy/app/assets/javascripts/ux", __dir__)
   FIXTURE_JS_ROOT = File.expand_path("fixtures/dummy/app/assets/javascripts", __dir__)
 
-  def with_temp_rails_root(&)
+  def with_temp_rails_root
     Dir.mktmpdir("react_manifest_test") do |tmpdir|
       Rails.root = tmpdir
       ReactManifest.reset!
