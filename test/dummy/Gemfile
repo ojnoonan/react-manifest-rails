@@ -6,7 +6,7 @@ gem "sqlite3"
 gem "puma"
 
 # The gem under test
-gem "react-manifest-rails", path: "../..", require: "react_manifest_rails"
+gem "react-manifest-rails", path: "../.."
 
 group :development do
   gem "listen"

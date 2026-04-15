@@ -51,6 +51,10 @@ RSpec.describe ReactManifest::Configuration do
     it "disables verbose by default" do
       expect(config.verbose?).to be false
     end
+
+    it "enables stdout_logging by default" do
+      expect(config.stdout_logging?).to be true
+    end
   end
 
   describe "#abs_ux_root" do
@@ -109,6 +113,18 @@ RSpec.describe ReactManifest::Configuration do
     it "returns true when verbose is set" do
       config.verbose = true
       expect(config.verbose?).to be true
+    end
+  end
+
+  describe "stdout_logging?" do
+    it "returns true when stdout_logging is set" do
+      config.stdout_logging = true
+      expect(config.stdout_logging?).to be true
+    end
+
+    it "returns false when stdout_logging is disabled" do
+      config.stdout_logging = false
+      expect(config.stdout_logging?).to be false
     end
   end
 end

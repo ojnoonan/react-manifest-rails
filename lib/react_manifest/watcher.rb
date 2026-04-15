@@ -65,6 +65,7 @@ module ReactManifest
         msg = "[ReactManifest] #{message}"
         if defined?(Rails) && Rails.logger
           Rails.logger.info(msg)
+          $stdout.puts(msg) if Rails.env.development? && ReactManifest.configuration.stdout_logging?
         else
           $stdout.puts msg
         end

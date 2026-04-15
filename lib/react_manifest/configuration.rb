@@ -41,6 +41,10 @@ module ReactManifest
     # Extra logging
     attr_accessor :verbose
 
+    # Emit ReactManifest status lines to stdout in development
+    # (independent from Rails.logger output)
+    attr_accessor :stdout_logging
+
     def initialize
       @ux_root           = "app/assets/javascripts/ux"
       @app_dir           = "app"
@@ -53,6 +57,7 @@ module ReactManifest
       @extensions        = %w[js jsx]
       @dry_run           = false
       @verbose           = false
+      @stdout_logging    = true
     end
 
     def dry_run?
@@ -61,6 +66,10 @@ module ReactManifest
 
     def verbose?
       !!@verbose
+    end
+
+    def stdout_logging?
+      !!@stdout_logging
     end
 
     # Glob fragment used by Dir.glob, e.g. "*.{js,jsx}" or "*.{js,jsx,ts,tsx}"

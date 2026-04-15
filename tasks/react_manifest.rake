@@ -1,7 +1,15 @@
 namespace :react_manifest do
   desc "Generate all ux_*.js Sprockets manifests from the ux/ directory tree"
   task generate: :environment do
-    results = ReactManifest::Generator.new.run!
+    config = ReactManifest.configuration
+
+    unless Dir.exist?(config.abs_ux_root)
+      puts "[ReactManifest] ux_root not found: #{config.abs_ux_root}"
+      puts "[ReactManifest] Create it (for example: app/assets/javascripts/ux) then run this task again."
+      next
+    end
+
+    results = ReactManifest::Generator.new(config).run!
 
     written   = results.count { |r| r[:status] == :written }
     unchanged = results.count { |r| r[:status] == :unchanged }
@@ -12,6 +20,9 @@ namespace :react_manifest do
       puts "[ReactManifest] DRY-RUN complete: #{dry} manifest(s) would be written"
     else
       puts "[ReactManifest] Done: #{written} written, #{unchanged} unchanged, #{skipped} skipped"
+      if (written + unchanged + skipped).zero?
+        puts "[ReactManifest] No manifests generated. Ensure ux/app/<controller>/ contains .js or .jsx files."
+      end
     end
 
     # Print any scanner warnings

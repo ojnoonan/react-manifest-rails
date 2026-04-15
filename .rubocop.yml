@@ -6,6 +6,7 @@ AllCops:
     - "vendor/**/*"
     - "test/dummy/**/*"
     - "spec/fixtures/**/*"
+    - "lib/react-manifest-rails.rb"
 
 # Disabled cops that don't fit this project's style
 Style/Documentation:

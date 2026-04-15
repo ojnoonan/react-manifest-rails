@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.3] - 2026-04-15
+
+### Added
+- Compatibility entrypoint (`lib/react-manifest-rails.rb`) so default Bundler auto-require reliably loads the Railtie and rake tasks.
+- Development boot-time sync that generates missing `ux_*.js` manifests once on server start.
+- Configurable stdout logging with `config.stdout_logging` for visible generation events in development.
+
+### Changed
+- Streamlined README into a concise development-first quickstart with direct troubleshooting for missing tasks and watcher behavior.
+- Improved `react_manifest:generate` diagnostics when `ux_root` is missing or no controller bundles are detected.
+- Watcher and boot-time generation now emit clearer runtime status lines for easier debugging.
+
 ## [0.2.2] - 2026-04-15
 
 ### Changed
