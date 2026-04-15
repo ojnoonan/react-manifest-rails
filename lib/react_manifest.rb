@@ -1,4 +1,5 @@
 require "fileutils"
+require "set"
 
 require "react_manifest/version"
 require "react_manifest/configuration"
