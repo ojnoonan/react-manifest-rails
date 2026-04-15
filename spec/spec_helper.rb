@@ -18,8 +18,8 @@ module FakeRails
       @path = Pathname.new(path)
     end
 
-    def join(*)
-      @path.join(*)
+    def join(*args)
+      @path.join(*args)
     end
 
     def to_s
