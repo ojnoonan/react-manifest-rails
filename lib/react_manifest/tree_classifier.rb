@@ -24,18 +24,18 @@ module ReactManifest
       begin
         Dir.children(@config.abs_ux_root).sort.each do |entry|
           full_path = File.join(@config.abs_ux_root, entry)
-          next unless File.directory?(full_path)
+          next unless real_directory?(full_path)
 
           if entry == @config.app_dir
             begin
               Dir.children(full_path).sort.each do |ctrl_entry|
                 ctrl_path = File.join(full_path, ctrl_entry)
-                next unless File.directory?(ctrl_path)
+                next unless real_directory?(ctrl_path)
                 next if @config.ignore.include?(ctrl_entry)
 
                 controller_dirs << {
-                  name:        ctrl_entry,
-                  path:        ctrl_path,
+                  name: ctrl_entry,
+                  path: ctrl_path,
                   bundle_name: "ux_#{ctrl_entry}"
                 }
               end
@@ -57,10 +57,23 @@ module ReactManifest
       Result.new(controller_dirs: controller_dirs, shared_dirs: shared_dirs)
     end
 
+    private
+
+    # Returns true for both plain directories and symlinks that point to directories.
+    # File.directory? returns false for symlinks on some systems.
+    def real_directory?(path)
+      File.directory?(File.realpath(path))
+    rescue Errno::ENOENT, Errno::ELOOP
+      false
+    end
+
+    public
+
     # Watch ux_root recursively so newly added controller directories
     # are automatically detected without restarting the development server.
     def watched_dirs
       return [] unless Dir.exist?(@config.abs_ux_root)
+
       dirs = [@config.abs_ux_root]
       dirs << @config.abs_app_dir if Dir.exist?(@config.abs_app_dir)
       dirs

@@ -92,4 +92,65 @@ RSpec.describe ReactManifest::Scanner do
       expect(result.warnings.any? { |w| w.include?("naming convention") }).to be true
     end
   end
+
+  describe "error handling" do
+    it "warns and skips a controller file deleted between glob and read" do
+      ctrl_dir = File.join(Rails.root.join(config.ux_root, "app", "users").to_s)
+      victim   = File.join(ctrl_dir, "users_index.js")
+      File.write(victim, "const X = 1;")
+
+      allow(File).to receive(:read).and_call_original
+      allow(File).to receive(:read).with(victim, encoding: "utf-8")
+                                   .and_raise(Errno::ENOENT, "No such file")
+
+      result = scanner.scan(classifier.classify)
+      expect(result.warnings.any? { |w| w.include?(File.basename(victim)) }).to be true
+    end
+
+    it "warns and skips a controller file with a permission error" do
+      ctrl_dir = File.join(Rails.root.join(config.ux_root, "app", "users").to_s)
+      victim   = File.join(ctrl_dir, "users_index.js")
+      File.write(victim, "const X = 1;")
+
+      allow(File).to receive(:read).and_call_original
+      allow(File).to receive(:read).with(victim, encoding: "utf-8")
+                                   .and_raise(Errno::EACCES, "Permission denied")
+
+      result = scanner.scan(classifier.classify)
+      expect(result.warnings.any? { |w| w.include?(File.basename(victim)) }).to be true
+    end
+
+    it "warns and skips a non-UTF-8 controller file" do
+      ctrl_dir = File.join(Rails.root.join(config.ux_root, "app", "users").to_s)
+      victim   = File.join(ctrl_dir, "users_index.js")
+      File.write(victim, "const X = 1;")
+
+      allow(File).to receive(:read).and_call_original
+      allow(File).to receive(:read).with(victim, encoding: "utf-8")
+                                   .and_raise(Encoding::InvalidByteSequenceError, "invalid byte")
+
+      result = scanner.scan(classifier.classify)
+      expect(result.warnings.any? { |w| w.include?(File.basename(victim)) }).to be true
+    end
+
+    it "returns empty symbols for an unreadable shared file" do
+      shared_file = File.join(Rails.root.join(config.ux_root, "components", "buttons", "primary_button.jsx").to_s)
+
+      allow(File).to receive(:read).and_call_original
+      allow(File).to receive(:read).with(shared_file, encoding: "utf-8")
+                                   .and_raise(Errno::EACCES, "Permission denied")
+
+      result = scanner.scan(classifier.classify)
+      # Should not raise; symbol index may be smaller but scan completes
+      expect(result).to be_a(ReactManifest::Scanner::Result)
+    end
+
+    it "does not crash on invalid/empty JS content" do
+      ctrl_dir = File.join(Rails.root.join(config.ux_root, "app", "users").to_s)
+      junk_file = File.join(ctrl_dir, "users_junk.js")
+      File.write(junk_file, "\x00\x01\x02 not js !!!")
+
+      expect { scanner.scan(classifier.classify) }.not_to raise_error
+    end
+  end
 end

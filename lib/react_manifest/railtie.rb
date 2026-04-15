@@ -12,7 +12,7 @@ module ReactManifest
       if Rails.env.development? && !ReactManifest::Watcher.running?
         begin
           ReactManifest::Watcher.start(ReactManifest.configuration)
-        rescue => e
+        rescue StandardError => e
           Rails.logger.warn "[ReactManifest] Could not start file watcher: #{e.message}"
         end
       end
@@ -36,7 +36,7 @@ module ReactManifest
     # (which is subject to parallel task ordering under rake -j).
     # ----------------------------------------------------------------
     rake_tasks do
-      load File.expand_path("../../../tasks/react_manifest.rake", __FILE__)
+      load File.expand_path("../../tasks/react_manifest.rake", __dir__)
 
       if Rake::Task.task_defined?("assets:precompile")
         Rake::Task["assets:precompile"].enhance(["react_manifest:generate"])

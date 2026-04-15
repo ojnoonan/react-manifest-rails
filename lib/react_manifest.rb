@@ -1,4 +1,3 @@
-require "set"
 require "fileutils"
 
 require "react_manifest/version"
@@ -35,9 +34,7 @@ module ReactManifest
       bundles = []
 
       # 1. Shared bundle always first
-      if bundle_exists?(output, config.shared_bundle)
-        bundles << config.shared_bundle
-      end
+      bundles << config.shared_bundle if bundle_exists?(output, config.shared_bundle)
 
       # 2. always_include bundles (e.g. ux_main)
       config.always_include.each do |b|

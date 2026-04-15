@@ -15,7 +15,7 @@ namespace :react_manifest do
     end
 
     # Print any scanner warnings
-    results  # warnings are printed inline by scanner via $stdout in verbose mode
+    results # warnings are printed inline by scanner via $stdout in verbose mode
   end
 
   desc "Print the JSX dependency map and warnings without writing any files"
@@ -65,10 +65,10 @@ namespace :react_manifest do
       first_line = File.foreach(file).first.to_s
       if first_line.include?("AUTO-GENERATED")
         File.delete(file)
-        puts "[ReactManifest] Removed: #{file.sub(Rails.root.to_s + '/', '')}"
+        puts "[ReactManifest] Removed: #{file.sub("#{Rails.root}/", '')}"
         removed += 1
       else
-        puts "[ReactManifest] Skipped (not auto-generated): #{file.sub(Rails.root.to_s + '/', '')}"
+        puts "[ReactManifest] Skipped (not auto-generated): #{file.sub("#{Rails.root}/", '')}"
         skipped += 1
       end
     end

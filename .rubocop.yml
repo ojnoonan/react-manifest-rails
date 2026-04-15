@@ -1,0 +1,55 @@
+AllCops:
+  NewCops: enable
+  TargetRubyVersion: 3.2
+  SuggestExtensions: false
+  Exclude:
+    - "vendor/**/*"
+    - "test/dummy/**/*"
+    - "spec/fixtures/**/*"
+
+# Disabled cops that don't fit this project's style
+Style/Documentation:
+  Enabled: false
+
+Style/FrozenStringLiteralComment:
+  Enabled: false
+
+Style/StringLiterals:
+  EnforcedStyle: double_quotes
+
+Layout/LineLength:
+  Max: 120
+
+# ----------------------------------------------------------------
+# Metrics — raised limits for methods/blocks that are complex by design
+# ----------------------------------------------------------------
+
+Metrics/MethodLength:
+  Max: 60
+  Exclude:
+    - "spec/**/*"
+
+Metrics/BlockLength:
+  Max: 35
+  Exclude:
+    - "spec/**/*"
+    - "tasks/**/*"
+    - "*.gemspec"
+
+# Dev deps in gemspec is the conventional pattern for published gems
+Gemspec/DevelopmentDependencies:
+  Enabled: false
+
+Metrics/ClassLength:
+  Max: 200
+
+Metrics/AbcSize:
+  Max: 70
+  Exclude:
+    - "spec/**/*"
+
+Metrics/CyclomaticComplexity:
+  Max: 20
+
+Metrics/PerceivedComplexity:
+  Max: 20

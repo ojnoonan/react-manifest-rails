@@ -1,3 +1,9 @@
+require "simplecov"
+SimpleCov.start do
+  add_filter "/spec/"
+  add_filter "/test/"
+end
+
 require "fileutils"
 require "tmpdir"
 require "pathname"
@@ -12,8 +18,8 @@ module FakeRails
       @path = Pathname.new(path)
     end
 
-    def join(*args)
-      @path.join(*args)
+    def join(*)
+      @path.join(*)
     end
 
     def to_s
@@ -27,9 +33,11 @@ module FakeRails
     def error(msg); end
   end
 
+  FakeConfig = Struct.new(:react_manifest)
+
   class FakeApp
     def config
-      OpenStruct.new(react_manifest: nil)
+      FakeConfig.new(nil)
     end
   end
 
@@ -55,15 +63,11 @@ module FakeRails
 end
 
 # Stub Rails constant for unit tests
-unless defined?(Rails)
-  Rails = FakeRails
-end
+Rails = FakeRails unless defined?(Rails)
 
 # Load the gem's lib files individually, skipping the Railtie
 # (Railtie requires real Rails; unit tests use FakeRails)
 $LOAD_PATH.unshift File.expand_path("../lib", __dir__)
-require "set"
-require "fileutils"
 require "react_manifest/version"
 require "react_manifest/configuration"
 require "react_manifest/tree_classifier"
@@ -96,9 +100,7 @@ module ReactManifest
       output  = config.abs_output_dir
       bundles = []
 
-      if bundle_exists?(output, config.shared_bundle)
-        bundles << config.shared_bundle
-      end
+      bundles << config.shared_bundle if bundle_exists?(output, config.shared_bundle)
 
       config.always_include.each do |b|
         bundles << b if bundle_exists?(output, b) && !bundles.include?(b)
@@ -138,7 +140,7 @@ module FixtureHelpers
   FIXTURE_UX_ROOT = File.expand_path("fixtures/dummy/app/assets/javascripts/ux", __dir__)
   FIXTURE_JS_ROOT = File.expand_path("fixtures/dummy/app/assets/javascripts", __dir__)
 
-  def with_temp_rails_root(&block)
+  def with_temp_rails_root(&)
     Dir.mktmpdir("react_manifest_test") do |tmpdir|
       Rails.root = tmpdir
       ReactManifest.reset!
@@ -146,7 +148,7 @@ module FixtureHelpers
     end
   end
 
-  def fixture_config(root)
+  def fixture_config(_root)
     ReactManifest.configure do |c|
       c.ux_root    = "app/assets/javascripts/ux"
       c.app_dir    = "app"

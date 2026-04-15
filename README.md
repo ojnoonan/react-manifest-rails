@@ -228,9 +228,118 @@ rails react_manifest:report
 - Consider splitting large bundles into smaller, more focused ones
 - Adjust `config.size_threshold_kb` in your initializer if needed
 
+## TypeScript / Custom Extensions
+
+By default the gem scans `*.js` and `*.jsx` files. To add TypeScript support:
+
+```ruby
+ReactManifest.configure do |config|
+  config.extensions = %w[js jsx ts tsx]
+end
+```
+
+This affects file scanning, manifest generation, and the development file watcher.
+
+## File Watching (`listen` gem)
+
+The development file watcher requires the `listen` gem, which is **not** a hard dependency. If `listen` is absent the watcher is silently disabled and you must regenerate manifests manually.
+
+To enable watching, add `listen` to the development group in your app's `Gemfile`:
+
+```ruby
+gem "listen", "~> 3.0", group: :development
+```
+
+> **Note:** Changes to `config/initializers/react_manifest.rb` are not picked up by the watcher — you must restart the server after editing the initializer.
+
+## Migrating an Existing `application.js`
+
+If you are adding this gem to an app that already has a monolithic `application.js`, use the built-in migration tools:
+
+**Step 1 — Analyse what's there:**
+
+```bash
+rails react_manifest:analyze
+```
+
+This classifies each `//= require` line as `:vendor` (keep), `:ux_code` (remove), or `:unknown` (review manually). No files are modified.
+
+**Step 2 — Preview changes:**
+
+```bash
+REACT_MANIFEST_DRY_RUN=1 rails react_manifest:migrate_application
+```
+
+**Step 3 — Apply changes:**
+
+```bash
+rails react_manifest:migrate_application
+```
+
+A `.bak` backup is created next to each modified file before any write.
+
+**Step 4 — Generate bundles and verify:**
+
+```bash
+rails react_manifest:generate
+rails assets:precompile  # or just start the dev server
+```
+
+**Rolling back:** Simply restore the `.bak` file and remove the generated `ux_*.js` manifests.
+
+## Troubleshooting
+
+### Bundle not being generated
+- Verify components live under `ux/app/<controller>/` (not directly under `ux/`)
+- Run `rails react_manifest:report` to see detected bundles
+- Check Rails logs for file watcher errors
+
+### Components not loading
+- Confirm `react_bundle_tag` is present in your layout
+- Check that the bundle name matches your controller path
+- Run `rails react_manifest:generate` to force regeneration
+
+### Bundle appears more than once in HTML output
+- A bundle name in `config.always_include` that is also the controller bundle will be deduplicated automatically. Check whether both the shared bundle name and a specific bundle are listed in `always_include`.
+
+### Watcher stops responding
+- This is usually resolved by restarting the development server
+- Ensure the `listen` gem is installed (see above)
+
+### Generator crashes on first run
+- Check that the process has write permission to `config.output_dir`
+- Verify `config.ux_root` exists; the generator is a no-op if the directory is missing
+
+### Size warnings
+- The gem warns when bundles exceed `config.size_threshold_kb` (default 500 KB)
+- Consider splitting large controller directories or moving shared code into the shared bundle
+- Adjust the threshold: `config.size_threshold_kb = 1000`
+
+## Performance
+
+| Scenario | Typical time |
+|----------|-------------|
+| Initial generation (small project, ~20 controllers) | < 1 s |
+| Initial generation (large project, ~100 controllers) | 2–5 s |
+| Watcher debounce (regeneration after file change) | ~300 ms |
+| Memory overhead (symbol index, large project) | < 10 MB |
+
+Scanning is purely regex-based — no Node.js or transpilation step required.
+
+## Compatibility
+
+| Dependency | Supported versions |
+|------------|-------------------|
+| Ruby | 3.2, 3.3 |
+| Rails / Railties | 6.1 – 8.x |
+| Sprockets | 3.x, 4.x |
+| listen (optional) | ~> 3.0 |
+
+> **Pre-1.0 notice:** The public API (configuration keys, rake task names, view helper signature) may change in minor versions until 1.0 is released. Pin to a patch version if stability is critical: `gem "react-manifest-rails", "~> 0.1.0"`.
+
 ## Requirements
 
-- Ruby >= 2.6.0
+- Ruby >= 3.2
 - Rails >= 6.1
 - Sprockets
 - react-rails
