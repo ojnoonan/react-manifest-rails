@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.5] - 2026-04-15
+
+### Fixed
+- Updated root `Gemfile.lock` to stay in sync with gemspec version changes, fixing frozen Bundler install failures in the release workflow.
+
+### Changed
+- Follow-up release from `0.2.4` to ensure GitHub Release trusted publishing can complete successfully.
+
 ## [0.2.4] - 2026-04-15
 
 ### Changed
