@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.4] - 2026-04-15
+
+### Changed
+- Clarified configuration semantics for `ignore`, `exclude_paths`, `dry_run`, `verbose`, and `stdout_logging` in inline code comments.
+- Updated README with clearer guidance on default configuration usage and explicit behavior notes for `ignore` vs `exclude_paths`.
+- Documented that scanning scope is limited to `ux_root` and that `exclude_paths` is path-segment based (not `application.js` include based).
+
 ## [0.2.3] - 2026-04-15
 
 ### Added

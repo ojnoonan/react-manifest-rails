@@ -23,10 +23,14 @@ module ReactManifest
     # Bundles always prepended by react_bundle_tag (e.g. ["ux_main"])
     attr_accessor :always_include
 
-    # Directories under app_dir to completely ignore
+    # Controller directory names directly under ux_root/app_dir to skip entirely.
+    # Example: ignore = ["admin"] skips ux/app/admin/* when building ux_<controller>.js.
     attr_accessor :ignore
 
-    # Top-level dirs under output_dir to never scan (vendor libs, etc.)
+    # Path segments to exclude while scanning files under ux_root.
+    # This is segment matching (not full path matching), so "vendor" excludes
+    # ux/vendor/foo.js and ux/app/users/vendor/bar.jsx, but not ux/vendor_custom/x.js.
+    # These are not application.js includes; they only affect ux tree scanning.
     attr_accessor :exclude_paths
 
     # Warn if a bundle exceeds this size in KB (0 = disabled)
@@ -35,14 +39,15 @@ module ReactManifest
     # File extensions to scan (default: js and jsx; add "ts", "tsx" for TypeScript)
     attr_accessor :extensions
 
-    # Print what would change, write nothing
+    # Preview mode: print what would change, write nothing.
+    # Applies anywhere generation runs (manual task, boot sync, watcher).
     attr_accessor :dry_run
 
-    # Extra logging
+    # Extra diagnostic logging (summary lines and richer error context).
     attr_accessor :verbose
 
-    # Emit ReactManifest status lines to stdout in development
-    # (independent from Rails.logger output)
+    # Emit ReactManifest status lines to stdout in development.
+    # Independent from Rails.logger output.
     attr_accessor :stdout_logging
 
     def initialize

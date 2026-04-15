@@ -23,6 +23,15 @@ end
 bundle install
 ```
 
+If your app uses this standard layout, you can keep defaults and only create the initializer if you want overrides:
+
+```text
+ux_root:     app/assets/javascripts/ux
+app_dir:     app
+output_dir:  app/assets/javascripts
+extensions:  js, jsx
+```
+
 3. Add initializer:
 
 ```ruby
@@ -72,6 +81,27 @@ In development:
 - If `listen` is installed, file changes regenerate manifests automatically.
 - If `listen` is missing, run `bundle exec rails react_manifest:generate` manually.
 - Set `config.stdout_logging = false` to silence ReactManifest console lines while keeping Rails logger output.
+
+## Configuration Notes
+
+- `ignore`:
+  - Skips controller directory names directly under `ux/app/`.
+  - Example: `ignore = ["admin"]` skips `ux/app/admin/*`.
+
+- `exclude_paths`:
+  - Excludes files by matching path segments while scanning the `ux_root` tree.
+  - Example: `exclude_paths = ["vendor"]` excludes `ux/vendor/*` and any nested `.../vendor/...` segment.
+  - This is not based on what is included in `application.js`.
+
+- `dry_run`:
+  - Preview mode only; computes and prints changes but writes no files.
+
+- `verbose` vs `stdout_logging`:
+  - `verbose`: extra diagnostic detail.
+  - `stdout_logging`: whether ReactManifest status lines are printed to terminal stdout.
+
+- Scope:
+  - Manifest generation only scans files under `ux_root`.
 
 ## What Gets Generated
 
