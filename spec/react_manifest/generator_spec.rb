@@ -172,5 +172,21 @@ RSpec.describe ReactManifest::Generator do
         expect(tmp_files).to be_empty
       end
     end
+
+    describe "legacy manifest migration" do
+      it "removes duplicate auto-generated legacy manifests from output root" do
+        legacy_path = File.join(config.abs_output_dir, "ux_shared.js")
+        manifest_path = File.join(config.abs_manifest_dir, "ux_shared.js")
+
+        FileUtils.mkdir_p(config.abs_manifest_dir)
+        File.write(manifest_path, "// AUTO-GENERATED\n//= require ux/components/new_path\n")
+        File.write(legacy_path, "// AUTO-GENERATED\n//= require ux/components/old_path\n")
+
+        described_class.new(config).run!
+
+        expect(File.exist?(manifest_path)).to be true
+        expect(File.exist?(legacy_path)).to be false
+      end
+    end
   end
 end

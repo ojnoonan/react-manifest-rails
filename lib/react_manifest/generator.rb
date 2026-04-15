@@ -152,7 +152,12 @@ module ReactManifest
       FileUtils.mkdir_p(manifest_dir)
       legacy_files.each do |legacy|
         target = File.join(manifest_dir, File.basename(legacy))
-        next if File.exist?(target)
+        if File.exist?(target)
+          # Prevent double-definition conflicts: if a legacy root manifest is
+          # auto-generated and a manifest-dir equivalent exists, drop the legacy file.
+          FileUtils.rm_f(legacy) if auto_generated?(legacy)
+          next
+        end
 
         FileUtils.mv(legacy, target)
       end

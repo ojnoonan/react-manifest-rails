@@ -38,7 +38,11 @@ module ReactManifest
     # Keep generated manifests in a dedicated folder while preserving logical
     # asset names (ux_shared, ux_users, etc.) via an explicit Sprockets path.
     initializer "react_manifest.assets_path" do |app|
-      app.config.assets.paths << ReactManifest.configuration.abs_manifest_dir if app.config.respond_to?(:assets)
+      next unless app.config.respond_to?(:assets)
+
+      manifest_dir = ReactManifest.configuration.abs_manifest_dir
+      app.config.assets.paths.delete(manifest_dir)
+      app.config.assets.paths.unshift(manifest_dir)
     end
 
     # ----------------------------------------------------------------
