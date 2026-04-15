@@ -34,10 +34,10 @@ Gem::Specification.new do |spec|
   spec.require_paths = ["lib"]
 
   # Runtime dependencies
-  spec.add_dependency "railties", ">= 6.1", "< 9"
+  spec.add_dependency "railties", ">= 7.0", "< 9"
 
   # Development dependencies
-  spec.add_development_dependency "rails", ">= 6.1", "< 9"
+  spec.add_development_dependency "rails", ">= 7.0", "< 9"
   spec.add_development_dependency "rake"
   spec.add_development_dependency "rspec",       "~> 3.12"
   spec.add_development_dependency "rspec-rails", "~> 6.0"
