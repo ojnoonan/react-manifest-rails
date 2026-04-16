@@ -131,6 +131,66 @@ RSpec.describe ReactManifest::Scanner do
       # Token-based matching picks it up correctly.
       expect(products_usage.any? { |f| f.include?("icon_button") }).to be true
     end
+
+    describe "shared-file uses app-dir symbol detection" do
+      it "warns when a shared file references a controller-specific symbol" do
+        shared_dir = Rails.root.join(config.ux_root, "components")
+        FileUtils.mkdir_p(shared_dir)
+        File.write(shared_dir.join("bad_shared.js"),
+                   "const BadShared = () => <UsersIndex />;\n")
+
+        ctrl_dir = Rails.root.join(config.ux_root, "app", "users")
+        FileUtils.mkdir_p(ctrl_dir)
+        File.write(ctrl_dir.join("users_index.js"),
+                   "const UsersIndex = () => <div />;\n")
+
+        result = scanner.scan(classifier.classify)
+        expect(result.warnings.any? { |w| w.include?("Shared file") && w.include?("UsersIndex") }).to be true
+      end
+
+      it "populates shared_violations with structured data" do
+        shared_dir = Rails.root.join(config.ux_root, "components")
+        FileUtils.mkdir_p(shared_dir)
+        File.write(shared_dir.join("bad_shared.js"),
+                   "const BadShared = () => <UsersIndex />;\n")
+
+        ctrl_dir = Rails.root.join(config.ux_root, "app", "users")
+        FileUtils.mkdir_p(ctrl_dir)
+        File.write(ctrl_dir.join("users_index.js"),
+                   "const UsersIndex = () => <div />;\n")
+
+        result = scanner.scan(classifier.classify)
+        violation = result.shared_violations.find { |v| v[:symbol] == "UsersIndex" }
+        expect(violation).not_to be_nil
+        expect(violation[:controller]).to eq("users")
+        expect(violation[:shared_file]).to include("bad_shared")
+      end
+
+      it "does not warn when a shared file only uses other shared symbols" do
+        shared_dir = Rails.root.join(config.ux_root, "components")
+        FileUtils.mkdir_p(shared_dir)
+        File.write(shared_dir.join("good_shared.js"),
+                   "const GoodShared = () => <PrimaryButton />;\n")
+
+        result = scanner.scan(classifier.classify)
+        expect(result.warnings.none? { |w| w.include?("GoodShared") }).to be true
+      end
+
+      it "does not flag locally-defined symbols in shared files" do
+        shared_dir = Rails.root.join(config.ux_root, "components")
+        FileUtils.mkdir_p(shared_dir)
+        # Defines and uses WidgetHelper locally — not a cross-boundary violation
+        File.write(shared_dir.join("self_ref.js"),
+                   "const WidgetHelper = () => <div />;\nconst Widget = () => <WidgetHelper />;\n")
+
+        ctrl_dir = Rails.root.join(config.ux_root, "app", "users")
+        FileUtils.mkdir_p(ctrl_dir)
+        File.write(ctrl_dir.join("users_index.js"), "const UsersIndex = () => <div />;\n")
+
+        result = scanner.scan(classifier.classify)
+        expect(result.warnings.none? { |w| w.include?("WidgetHelper") }).to be true
+      end
+    end
   end
 
   describe "token-based symbol detection" do

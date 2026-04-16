@@ -15,6 +15,7 @@ module ReactManifest
   #   and produces per-controller lists of referenced shared files.
   #
   # Phase 3 — emits non-fatal warnings.
+  # rubocop:disable Metrics/ClassLength
   class Scanner
     # Patterns to detect symbol definitions (CommonJS and ES module style)
     DEFINITION_PATTERNS = [
@@ -56,21 +57,24 @@ module ReactManifest
       Object Array String Number Boolean Symbol Map Set WeakMap
     ].freeze
 
-    Result = Struct.new(:symbol_index, :controller_usages, :warnings, keyword_init: true)
+    Result = Struct.new(:symbol_index, :controller_usages, :warnings, :shared_violations, keyword_init: true)
 
     def initialize(config = ReactManifest.configuration)
       @config = config
     end
 
+    # rubocop:disable Metrics/MethodLength,Metrics/AbcSize,Metrics/PerceivedComplexity
     def scan(classification)
       warnings      = []
       symbol_index  = {}
 
       # Phase 1a: index symbols from shared dirs
+      shared_file_paths = {} # file_path => relative_require_path for all shared files
       classification.shared_dirs.each do |shared_dir|
         js_files_in(shared_dir[:path]).each do |file_path|
           relative = relative_require_path(file_path)
-          symbols  = extract_definitions(file_path)
+          shared_file_paths[file_path] = relative
+          symbols = extract_definitions(file_path)
           symbols.each do |sym|
             if symbol_index.key?(sym)
               warnings << "Duplicate symbol '#{sym}' in #{relative} (already from #{symbol_index[sym]})"
@@ -98,7 +102,23 @@ module ReactManifest
         symbol_index[sym] = require_path
       end
 
+      # Phase 1d: build controller (app-dir) symbol index for violation detection
+      controller_symbol_index = {}
+      classification.controller_dirs.each do |ctrl|
+        js_files_in(ctrl[:path]).each do |file_path|
+          extract_definitions(file_path).each do |sym|
+            controller_symbol_index[sym] ||= {
+              file: relative_require_path(file_path),
+              controller: ctrl[:name]
+            }
+          end
+        end
+      end
+
       $stdout.puts "[ReactManifest] Shared symbol index: #{symbol_index.size} symbols indexed" if @config.verbose?
+
+      # Phase 1e: detect shared files that use app-dir (controller) symbols
+      shared_violations = detect_shared_violations(shared_file_paths, controller_symbol_index, warnings)
 
       # Phase 2: scan controller dirs for usage
       controller_usages = {}
@@ -126,9 +146,11 @@ module ReactManifest
       Result.new(
         symbol_index: symbol_index,
         controller_usages: controller_usages,
-        warnings: warnings
+        warnings: warnings,
+        shared_violations: shared_violations
       )
     end
+    # rubocop:enable Metrics/MethodLength,Metrics/AbcSize,Metrics/PerceivedComplexity
 
     private
 
@@ -177,8 +199,38 @@ module ReactManifest
                   "'#{ctrl_name}_<action>.js.jsx' naming convention"
     end
 
+    def detect_shared_violations(shared_file_paths, controller_symbol_index, warnings)
+      violations = []
+      shared_file_paths.each do |file_path, relative|
+        content = begin
+          File.read(file_path, encoding: "utf-8")
+        rescue Errno::ENOENT, Errno::EACCES, Encoding::InvalidByteSequenceError
+          next
+        end
+
+        local_syms = Set.new
+        DEFINITION_PATTERNS.each { |p| content.scan(p) { |m| local_syms << m[0] } }
+
+        [PASCAL_TOKEN_PATTERN, HOOK_TOKEN_PATTERN].each do |pattern|
+          content.scan(pattern) do |match|
+            sym = match[0]
+            next if local_syms.include?(sym)
+            next unless controller_symbol_index.key?(sym)
+
+            info = controller_symbol_index[sym]
+            violations << { shared_file: relative, symbol: sym,
+                            controller: info[:controller], app_file: info[:file] }
+            warnings << "Shared file '#{relative}' uses app-dir symbol '#{sym}' " \
+                        "(from ux/app/#{info[:controller]}). " \
+                        "Move '#{sym}' to a shared dir or the shared file will be incomplete."
+          end
+        end
+      end
+      violations
+    end
+
+    # Count how many controllers use each shared file
     def emit_fanout_warnings(controller_usages, warnings)
-      # Count how many controllers use each shared file
       fanout = Hash.new(0)
       controller_usages.each_value do |files|
         files.each { |f| fanout[f] += 1 }
@@ -270,4 +322,5 @@ module ReactManifest
       Rails.root.join(path).to_s
     end
   end
+  # rubocop:enable Metrics/ClassLength
 end
