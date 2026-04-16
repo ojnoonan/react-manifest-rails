@@ -10,8 +10,8 @@ module ReactManifest
   #   ReactManifest::LayoutPatcher.new(config).patch!
   class LayoutPatcher
     LAYOUTS_GLOB   = "app/views/layouts/*.html.{erb,haml,slim}".freeze
-    BUNDLE_TAG_ERB = "<%= react_bundle_tag defer: true %>\n".freeze
-    BUNDLE_TAG_HAML = "= react_bundle_tag defer: true\n".freeze
+    BUNDLE_TAG_ERB = "<%= react_bundle_tag %>\n".freeze
+    BUNDLE_TAG_HAML = "= react_bundle_tag\n".freeze
 
     Result = Struct.new(:file, :status, :detail, keyword_init: true)
 

@@ -177,7 +177,7 @@ module ReactManifest
       # Build relative to output_dir (configurable) rather than a hardcoded path.
       base = @config.abs_output_dir + File::SEPARATOR
       rel  = abs_path.sub(base, "")
-      # Strip Sprockets-understood extensions: .js.jsx → "", .jsx → "", .js → ""
+      # Strip Sprockets-understood extensions: .js.jsx/.jsx/.js -> logical path.
       rel.sub(/\.js\.jsx$/, "").sub(/\.jsx$/, "").sub(/\.js$/, "")
     end
 

@@ -79,10 +79,6 @@ RSpec.describe ReactManifest::Generator do
     describe "ux_notifications.js content" do
       subject(:content) { read_manifest("ux_notifications.js") }
 
-      it "requires ux_shared" do
-        expect(content).to include("//= require ux_shared")
-      end
-
       it "requires notifications_index" do
         expect(content).to include("notifications_index")
       end

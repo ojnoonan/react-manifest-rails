@@ -83,6 +83,10 @@ GEM
       uri (>= 0.13.1)
     addressable (2.8.9)
       public_suffix (>= 2.0.2, < 8.0)
+    babel-source (5.8.35)
+    babel-transpiler (0.7.0)
+      babel-source (>= 4.0, < 6)
+      execjs (~> 2.0)
     base64 (0.3.0)
     bigdecimal (4.1.1)
     builder (3.3.0)
@@ -102,6 +106,7 @@ GEM
     drb (2.2.3)
     erb (6.0.2)
     erubi (1.13.1)
+    execjs (2.10.1)
     ffi (1.17.4-arm64-darwin)
     globalid (1.3.0)
       activesupport (>= 6.1)
@@ -203,6 +208,12 @@ GEM
       erb
       psych (>= 4.0.0)
       tsort
+    react-rails (3.3.0)
+      babel-transpiler (>= 0.7.0)
+      connection_pool
+      execjs
+      railties (>= 3.2)
+      tilt
     regexp_parser (2.11.3)
     reline (0.6.3)
       io-console (~> 0.5)
@@ -218,6 +229,7 @@ GEM
     sqlite3 (2.7.4-arm64-darwin)
     stringio (3.2.0)
     thor (1.5.0)
+    tilt (2.7.0)
     timeout (0.6.1)
     tsort (0.2.0)
     tzinfo (2.0.6)
@@ -241,6 +253,7 @@ DEPENDENCIES
   puma
   rails (>= 6.1)
   react-manifest-rails!
+  react-rails
   sprockets-rails
   sqlite3
 
@@ -258,6 +271,8 @@ CHECKSUMS
   activestorage (8.1.3) sha256=0564ce9309143951a67615e1bb4e090ee54b8befed417133cae614479b46384d
   activesupport (8.1.3) sha256=21a5e0dfbd4c3ddd9e1317ec6a4d782fa226e7867dc70b0743acda81a1dca20e
   addressable (2.8.9) sha256=cc154fcbe689711808a43601dee7b980238ce54368d23e127421753e46895485
+  babel-source (5.8.35) sha256=79ef222a9dcb867ac2efa3b0da35b4bcb15a4bfa67b6b2dcbf1e9a29104498d9
+  babel-transpiler (0.7.0) sha256=4c06f4ad9e8e1cabe94f99e11df2f140bb72aca9ba067dbb49dc14d9b98d1570
   base64 (0.3.0) sha256=27337aeabad6ffae05c265c450490628ef3ebd4b67be58257393227588f5a97b
   bigdecimal (4.1.1) sha256=1c09efab961da45203c8316b0cdaec0ff391dfadb952dd459584b63ebf8054ca
   builder (3.3.0) sha256=497918d2f9dca528fdca4b88d84e4ef4387256d984b8154e9d5d3fe5a9c8835f
@@ -269,6 +284,7 @@ CHECKSUMS
   drb (2.2.3) sha256=0b00d6fdb50995fe4a45dea13663493c841112e4068656854646f418fda13373
   erb (6.0.2) sha256=9fe6264d44f79422c87490a1558479bd0e7dad4dd0e317656e67ea3077b5242b
   erubi (1.13.1) sha256=a082103b0885dbc5ecf1172fede897f9ebdb745a4b97a5e8dc63953db1ee4ad9
+  execjs (2.10.1) sha256=abe0ae028467eb8e30c10814eb934d07876a691aae7e803d813b7ce5a75e73f1
   ffi (1.17.4-arm64-darwin) sha256=19071aaf1419251b0a46852abf960e77330a3b334d13a4ab51d58b31a937001b
   globalid (1.3.0) sha256=05c639ad6eb4594522a0b07983022f04aa7254626ab69445a0e493aa3786ff11
   i18n (1.14.8) sha256=285778639134865c5e0f6269e0b818256017e8cde89993fdfcbfb64d088824a5
@@ -309,6 +325,7 @@ CHECKSUMS
   rb-inotify (0.11.1) sha256=a0a700441239b0ff18eb65e3866236cd78613d6b9f78fea1f9ac47a85e47be6e
   rdoc (7.2.0) sha256=8650f76cd4009c3b54955eb5d7e3a075c60a57276766ebf36f9085e8c9f23192
   react-manifest-rails (0.2.10)
+  react-rails (3.3.0) sha256=5e9de845f00be6729c7a2ee67700ba60be6fcdeac46b54340fdbc0a4d093fd5a
   regexp_parser (2.11.3) sha256=ca13f381a173b7a93450e53459075c9b76a10433caadcb2f1180f2c741fc55a4
   reline (0.6.3) sha256=1198b04973565b36ec0f11542ab3f5cfeeec34823f4e54cebde90968092b1835
   securerandom (0.4.1) sha256=cc5193d414a4341b6e225f0cb4446aceca8e50d5e1888743fac16987638ea0b1
@@ -317,6 +334,7 @@ CHECKSUMS
   sqlite3 (2.7.4-arm64-darwin) sha256=d5b09cd4e9542aa05f0db0eb7dd868102cc23072ae378e0453e59e0efaed89b8
   stringio (3.2.0) sha256=c37cb2e58b4ffbd33fe5cd948c05934af997b36e0b6ca6fdf43afa234cf222e1
   thor (1.5.0) sha256=e3a9e55fe857e44859ce104a84675ab6e8cd59c650a49106a05f55f136425e73
+  tilt (2.7.0) sha256=0d5b9ba69f6a36490c64b0eee9f6e9aad517e20dcc848800a06eb116f08c6ab3
   timeout (0.6.1) sha256=78f57368a7e7bbadec56971f78a3f5ecbcfb59b7fcbb0a3ed6ddc08a5094accb
   tsort (0.2.0) sha256=9650a793f6859a43b6641671278f79cfead60ac714148aabe4e3f0060480089f
   tzinfo (2.0.6) sha256=8daf828cc77bcf7d63b0e3bdb6caa47e2272dcfaf4fbfe46f8c3a9df087a829b

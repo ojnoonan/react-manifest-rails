@@ -101,4 +101,125 @@ RSpec.describe ReactManifest do
       end
     end
   end
+
+  describe ".resolve_bundle_for_component" do
+    around(:each) do |example|
+      with_temp_rails_root do |tmpdir|
+        copy_fixtures_to(tmpdir)
+        fixture_config(tmpdir)
+        ReactManifest::Generator.new(ReactManifest.configuration).run!
+        example.run
+      end
+    end
+
+    it "maps a known controller component symbol to its ux bundle" do
+      expect(described_class.resolve_bundle_for_component("UsersIndex")).to eq("ux_users")
+    end
+
+    it "returns nil for unknown component symbols" do
+      expect(described_class.resolve_bundle_for_component("UserSignInForm")).to be_nil
+    end
+
+    it "returns nil for blank component names" do
+      expect(described_class.resolve_bundle_for_component("")).to be_nil
+    end
+
+    it "maps component symbols from non-controller-aligned ux dirs" do
+      dir = Rails.root.join("app/assets/javascripts/ux/app/user_session")
+      FileUtils.mkdir_p(dir)
+      File.write(dir.join("user_sign_in_form.js.jsx"), "const UserSignInForm = () => <div />;\n")
+
+      ReactManifest::Generator.new(ReactManifest.configuration).run!
+
+      expect(described_class.resolve_bundle_for_component("UserSignInForm")).to eq("ux_user_session")
+    end
+  end
+
+  describe ".resolve_bundles_for_component" do
+    around(:each) do |example|
+      with_temp_rails_root do |tmpdir|
+        copy_fixtures_to(tmpdir)
+        fixture_config(tmpdir)
+        example.run
+      end
+    end
+
+    it "includes dependent controller bundles used by a component" do
+      dep_dir = Rails.root.join("app/assets/javascripts/ux/app/user_session")
+      app_dir = Rails.root.join("app/assets/javascripts/ux/app/account")
+      FileUtils.mkdir_p(dep_dir)
+      FileUtils.mkdir_p(app_dir)
+
+      File.write(dep_dir.join("user_sign_in_form.js.jsx"), "const UserSignInForm = () => <div />;\n")
+      File.write(app_dir.join("account_show.js.jsx"), "const AccountShow = () => <UserSignInForm />;\n")
+
+      ReactManifest::Generator.new(ReactManifest.configuration).run!
+
+      expect(described_class.resolve_bundles_for_component("AccountShow")).to eq(%w[ux_user_session ux_account])
+    end
+  end
+end
+
+RSpec.describe ReactManifest::ViewHelpers do
+  around(:each) do |example|
+    with_temp_rails_root do |tmpdir|
+      copy_fixtures_to(tmpdir)
+      fixture_config(tmpdir)
+      ReactManifest::Generator.new(ReactManifest.configuration).run!
+      example.run
+    end
+  end
+
+  let(:base_class) do
+    Class.new do
+      def react_component(name, *_args, **_kwargs)
+        "<div data-react-component='#{name}'></div>"
+      end
+
+      def javascript_include_tag(name, **_opts)
+        "<script src='#{name}.js'></script>"
+      end
+
+      def safe_join(parts)
+        parts.join
+      end
+    end
+  end
+
+  let(:host_class) do
+    Class.new(base_class) do
+      include ReactManifest::ViewHelpers
+    end
+  end
+
+  it "prepends a resolved ux bundle when rendering react_component" do
+    html = host_class.new.react_component("UsersIndex")
+    expect(html).to include("ux_users.js")
+    expect(html).to include("data-react-component='UsersIndex'")
+  end
+
+  it "does not duplicate the same component bundle for repeated calls" do
+    view = host_class.new
+    first = view.react_component("UsersIndex")
+    second = view.react_component("UsersIndex")
+
+    expect(first).to include("ux_users.js")
+    expect(second).not_to include("ux_users.js")
+  end
+
+  it "injects dependency bundles for cross-controller component usage" do
+    dep_dir = Rails.root.join("app/assets/javascripts/ux/app/user_session")
+    app_dir = Rails.root.join("app/assets/javascripts/ux/app/account")
+    FileUtils.mkdir_p(dep_dir)
+    FileUtils.mkdir_p(app_dir)
+
+    File.write(dep_dir.join("user_sign_in_form.js.jsx"), "const UserSignInForm = () => <div />;\n")
+    File.write(app_dir.join("account_show.js.jsx"), "const AccountShow = () => <UserSignInForm />;\n")
+
+    ReactManifest::Generator.new(ReactManifest.configuration).run!
+
+    html = host_class.new.react_component("AccountShow")
+    expect(html).to include("ux_user_session.js")
+    expect(html).to include("ux_account.js")
+  end
 end

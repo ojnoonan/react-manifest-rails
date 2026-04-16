@@ -1,5 +1,4 @@
 require "digest"
-require "time"
 require "tmpdir"
 
 module ReactManifest
@@ -26,7 +25,7 @@ module ReactManifest
   class Generator
     HEADER = <<~JS.freeze
       // AUTO-GENERATED — DO NOT EDIT
-      // react-manifest-rails %<version>s | %<timestamp>s
+      // react-manifest-rails %<version>s
       // Run `rails react_manifest:generate` to regenerate.
     JS
 
@@ -82,8 +81,6 @@ module ReactManifest
 
     def build_controller(ctrl)
       lines = header_lines
-      lines << "//= require #{@config.shared_bundle}"
-      lines << ""
 
       files = js_files_in(ctrl[:path])
       if files.empty?
@@ -167,7 +164,7 @@ module ReactManifest
 
     def header_lines
       [
-        format(HEADER, version: ReactManifest::VERSION, timestamp: Time.now.utc.iso8601),
+        format(HEADER, version: ReactManifest::VERSION),
         ""
       ].flatten
     end
@@ -206,7 +203,7 @@ module ReactManifest
       # Build relative to output_dir (configurable) rather than a hardcoded path.
       base = @config.abs_output_dir + File::SEPARATOR
       rel  = abs_path.sub(base, "")
-      # Strip Sprockets-understood extensions: .js.jsx → "", .jsx → "", .js → ""
+      # Strip Sprockets-understood extensions: .js.jsx/.jsx/.js -> logical path.
       rel.sub(/\.js\.jsx$/, "").sub(/\.jsx$/, "").sub(/\.js$/, "")
     end
 

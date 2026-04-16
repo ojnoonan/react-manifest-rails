@@ -43,6 +43,22 @@ module ReactManifest
       manifest_dir = ReactManifest.configuration.abs_manifest_dir
       app.config.assets.paths.delete(manifest_dir)
       app.config.assets.paths.unshift(manifest_dir)
+
+      app.config.assets.configure do |env|
+        next unless defined?(React::JSX::Processor)
+
+        begin
+          env.register_mime_type("application/jsx", extensions: [".jsx", ".js.jsx", ".es.jsx", ".es6.jsx"])
+        rescue StandardError
+          nil
+        end
+
+        begin
+          env.register_transformer("application/jsx", "application/javascript", React::JSX::Processor)
+        rescue StandardError
+          nil
+        end
+      end
     end
 
     # ----------------------------------------------------------------

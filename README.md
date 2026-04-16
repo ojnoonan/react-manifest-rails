@@ -88,6 +88,8 @@ Generation is **directory-based** — deterministic and conservative by design.
 
 Namespace fallback for nested controllers: `admin/reports/summary` tries `ux_admin_reports_summary`, then `ux_admin_reports`, then `ux_admin`, then `ux_summary`. The most specific match wins.
 
+When using `react-rails`, `react_component("ComponentName")` is also component-aware: the helper infers the matching controller bundle from the component symbol and includes it at render time. This provides a fallback when controller naming and bundle naming do not align perfectly.
+
 The gem's scanner uses regex to detect which shared symbols are referenced in each controller directory (for the `react_manifest:analyze` report). Generation itself stays directory-based to avoid brittle runtime misses from dynamic component references.
 
 ## What Gets Generated
@@ -203,6 +205,16 @@ Check in order:
 - Add `listen` to the development group in your Gemfile and `bundle install`.
 - Restart the Rails server.
 - Without `listen`, run `react_manifest:generate` manually after making changes.
+
+### `ComponentName is not defined` from `react_component`
+
+If you see errors like `UserSignInForm is not defined` (often from `eval` inside `react-rails`), ensure your layout does **not** defer the bundle tag:
+
+```erb
+<%= react_bundle_tag %>
+```
+
+Using `defer: true` can cause `react_component` inline scripts to run before your `ux_*.js` bundles are executed.
 
 ## Compatibility
 

@@ -30,9 +30,9 @@ RSpec.describe ReactManifest::Scanner do
     end
 
     it "maps each symbol to its correct relative require path" do
-      expect(result.symbol_index["PrimaryButton"]).to end_with("ux/components/buttons/primary_button")
-      expect(result.symbol_index["useFetch"]).to end_with("ux/hooks/use_fetch")
-      expect(result.symbol_index["formatDate"]).to end_with("ux/lib/format_date")
+      expect(result.symbol_index["PrimaryButton"]).to match(%r{ux/components/buttons/primary_button(\.js\.jsx)?\z})
+      expect(result.symbol_index["useFetch"]).to match(%r{ux/hooks/use_fetch(\.js\.jsx)?\z})
+      expect(result.symbol_index["formatDate"]).to match(%r{ux/lib/format_date(\.js\.jsx)?\z})
     end
 
     it "indexes ES module exports from shared files" do

@@ -86,7 +86,7 @@ RSpec.describe ReactManifest::LayoutPatcher do
     context "already patched layout" do
       before do
         path = layout_path("application.html.erb")
-        File.write(path, "#{File.read(path)}\n<%= react_bundle_tag defer: true %>\n")
+        File.write(path, "#{File.read(path)}\n<%= react_bundle_tag %>\n")
       end
 
       it "returns status :already_patched and does not duplicate" do

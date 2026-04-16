@@ -12,6 +12,7 @@
     <%# React 18 UMD (development build) via CDN %>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <%= javascript_include_tag "react_ujs" %>
 
     <%# Sprockets application bundle (lib + shared utils) %>
     <%= javascript_include_tag "application" %>
@@ -51,13 +52,7 @@
       </div>
     </nav>
 
-    <%
-      # Derive component name from controller_path + action: admin/users#index → AdminUsersIndex
-      component_name = (controller_path.split('/').map(&:camelize) + [action_name.camelize]).join
-    %>
-    <div id="react-app"
-         data-component="<%= component_name %>"
-         class="max-w-7xl mx-auto px-4 py-6"></div>
+    <%= yield %>
 
     <script>
       // Show which ux_* bundles were loaded for this page

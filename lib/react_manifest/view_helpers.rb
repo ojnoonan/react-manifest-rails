@@ -2,7 +2,7 @@ module ReactManifest
   # Provides the `react_bundle_tag` view helper, included in ActionView::Base.
   #
   # Usage in layouts:
-  #   <%= react_bundle_tag defer: true %>
+  #   <%= react_bundle_tag %>
   #
   # Resolves which ux_*.js bundles to include based on controller_path:
   #   1. Always includes config.shared_bundle (e.g. "ux_shared")
@@ -21,7 +21,33 @@ module ReactManifest
       bundles = ReactManifest.resolve_bundles(ctrl)
       return "".html_safe if bundles.empty?
 
-      javascript_include_tag(*bundles, **html_options)
+      asset_names = bundles.map { |bundle| "#{bundle}.js" }
+      javascript_include_tag(*asset_names, extname: false, **html_options)
+    end
+
+    # react-rails integration:
+    # If a component-specific controller bundle can be inferred from the component
+    # symbol, include that bundle at the call site before delegating to react-rails.
+    # This avoids strict dependence on controller_path -> bundle naming alignment.
+    def react_component(*args, **kwargs, &block)
+      html = super
+
+      component_name = args.first
+      bundles = ReactManifest.resolve_bundles_for_component(component_name)
+      return html if bundles.empty?
+
+      emitted = (@_react_manifest_emitted_bundles ||= [])
+
+      new_tags = bundles.filter_map do |bundle|
+        next if emitted.include?(bundle)
+
+        emitted << bundle
+        javascript_include_tag("#{bundle}.js", extname: false)
+      end
+
+      return html if new_tags.empty?
+
+      safe_join(new_tags + [html])
     end
   end
 end
