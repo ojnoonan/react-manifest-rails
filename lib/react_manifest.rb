@@ -186,10 +186,16 @@ module ReactManifest
     end
 
     def resolve_bundle_reference(config, bundle_name)
+      subdir = config.normalized_manifest_subdir
       manifest_path = File.join(config.abs_manifest_dir, "#{bundle_name}.js")
-      return bundle_name if File.exist?(manifest_path)
+      if File.exist?(manifest_path)
+        # Return the full Sprockets logical path so javascript_include_tag resolves
+        # correctly: files in ux_manifests/ have logical path ux_manifests/<name>.
+        return subdir.empty? ? bundle_name : "#{subdir}/#{bundle_name}"
+      end
 
-      # Backward compatibility for apps still holding legacy manifests in output_dir root.
+      # Backward compatibility: apps that wrote manifests directly to output_dir root
+      # before manifest_subdir was introduced keep working with bare bundle names.
       legacy_path = File.join(config.abs_output_dir, "#{bundle_name}.js")
       return bundle_name if File.exist?(legacy_path)
 

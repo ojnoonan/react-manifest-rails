@@ -16,18 +16,18 @@ RSpec.describe ReactManifest do
 
     it "always includes the shared bundle" do
       bundles = described_class.resolve_bundles("notifications")
-      expect(bundles).to include("ux_shared")
+      expect(bundles).to include("ux_manifests/ux_shared")
     end
 
     it "includes the controller-specific bundle when it exists" do
       bundles = described_class.resolve_bundles("notifications")
-      expect(bundles).to include("ux_notifications")
+      expect(bundles).to include("ux_manifests/ux_notifications")
     end
 
     it "shared bundle comes before controller bundle" do
       bundles = described_class.resolve_bundles("notifications")
-      shared_idx = bundles.index("ux_shared")
-      ctrl_idx   = bundles.index("ux_notifications")
+      shared_idx = bundles.index("ux_manifests/ux_shared")
+      ctrl_idx   = bundles.index("ux_manifests/ux_notifications")
       expect(shared_idx).to be < ctrl_idx
     end
 
@@ -39,7 +39,7 @@ RSpec.describe ReactManifest do
     it "includes always_include bundles when configured" do
       ReactManifest.configure { |c| c.always_include = ["ux_main"] }
       bundles = described_class.resolve_bundles("notifications")
-      expect(bundles).to include("ux_main")
+      expect(bundles).to include("ux_manifests/ux_main")
     end
 
     it "returns empty array when no shared bundle and no match (zero-JS page)" do
@@ -86,13 +86,13 @@ RSpec.describe ReactManifest do
       it "returns only shared bundle for an empty string controller" do
         bundles = described_class.resolve_bundles("")
         # ux_ exists if generator made one; otherwise just shared
-        expect(bundles).to include("ux_shared")
+        expect(bundles).to include("ux_manifests/ux_shared")
       end
 
       it "does not duplicate shared bundle in always_include" do
         ReactManifest.configure { |c| c.always_include = [config.shared_bundle] }
         bundles = described_class.resolve_bundles("notifications")
-        expect(bundles.count(config.shared_bundle)).to eq(1)
+        expect(bundles.count("ux_manifests/#{config.shared_bundle}")).to eq(1)
       end
 
       it "does not include a bundle that does not exist on disk" do
@@ -113,7 +113,7 @@ RSpec.describe ReactManifest do
     end
 
     it "maps a known controller component symbol to its ux bundle" do
-      expect(described_class.resolve_bundle_for_component("UsersIndex")).to eq("ux_users")
+      expect(described_class.resolve_bundle_for_component("UsersIndex")).to eq("ux_manifests/ux_users")
     end
 
     it "returns nil for unknown component symbols" do
@@ -131,7 +131,7 @@ RSpec.describe ReactManifest do
 
       ReactManifest::Generator.new(ReactManifest.configuration).run!
 
-      expect(described_class.resolve_bundle_for_component("UserSignInForm")).to eq("ux_user_session")
+      expect(described_class.resolve_bundle_for_component("UserSignInForm")).to eq("ux_manifests/ux_user_session")
     end
   end
 
@@ -155,7 +155,8 @@ RSpec.describe ReactManifest do
 
       ReactManifest::Generator.new(ReactManifest.configuration).run!
 
-      expect(described_class.resolve_bundles_for_component("AccountShow")).to eq(%w[ux_user_session ux_account])
+      expect(described_class.resolve_bundles_for_component("AccountShow"))
+        .to eq(%w[ux_manifests/ux_user_session ux_manifests/ux_account])
     end
 
     it "resolves cross-controller dependencies for main pages" do
@@ -169,7 +170,8 @@ RSpec.describe ReactManifest do
 
       ReactManifest::Generator.new(ReactManifest.configuration).run!
 
-      expect(described_class.resolve_bundles_for_component("MainIndex")).to eq(%w[ux_design_variables ux_main])
+      expect(described_class.resolve_bundles_for_component("MainIndex"))
+        .to eq(%w[ux_manifests/ux_design_variables ux_manifests/ux_main])
     end
 
     it "resolves dependencies when a component is passed via JSX props" do
@@ -184,7 +186,8 @@ RSpec.describe ReactManifest do
 
       ReactManifest::Generator.new(ReactManifest.configuration).run!
 
-      expect(described_class.resolve_bundles_for_component("MainIndex")).to eq(%w[ux_design_variables ux_main])
+      expect(described_class.resolve_bundles_for_component("MainIndex"))
+        .to eq(%w[ux_manifests/ux_design_variables ux_manifests/ux_main])
     end
 
     it "resolves dependencies when a component is passed as an object value" do
@@ -199,7 +202,8 @@ RSpec.describe ReactManifest do
 
       ReactManifest::Generator.new(ReactManifest.configuration).run!
 
-      expect(described_class.resolve_bundles_for_component("MainIndex")).to eq(%w[ux_design_variables ux_main])
+      expect(described_class.resolve_bundles_for_component("MainIndex"))
+        .to eq(%w[ux_manifests/ux_design_variables ux_manifests/ux_main])
     end
 
     it "resolves dependencies when components are passed in arrays" do
@@ -214,7 +218,8 @@ RSpec.describe ReactManifest do
 
       ReactManifest::Generator.new(ReactManifest.configuration).run!
 
-      expect(described_class.resolve_bundles_for_component("MainIndex")).to eq(%w[ux_design_variables ux_main])
+      expect(described_class.resolve_bundles_for_component("MainIndex"))
+        .to eq(%w[ux_manifests/ux_design_variables ux_manifests/ux_main])
     end
 
     it "resolves dependencies when array components are on separate lines" do
@@ -233,7 +238,8 @@ RSpec.describe ReactManifest do
 
       ReactManifest::Generator.new(ReactManifest.configuration).run!
 
-      expect(described_class.resolve_bundles_for_component("MainIndex")).to eq(%w[ux_design_variables ux_main])
+      expect(described_class.resolve_bundles_for_component("MainIndex"))
+        .to eq(%w[ux_manifests/ux_design_variables ux_manifests/ux_main])
     end
   end
 end
