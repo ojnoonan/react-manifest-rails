@@ -22,6 +22,7 @@ module ReactManifest
   # to avoid partial reads from concurrent processes.
   #
   # Never touches application.js, application_dev.js, or files in exclude_paths.
+  # rubocop:disable Metrics/ClassLength
   class Generator
     HEADER = <<~JS.freeze
       // AUTO-GENERATED — DO NOT EDIT
@@ -41,11 +42,12 @@ module ReactManifest
     # written and others stale/missing.
     def run!
       classification = @classifier.classify
+      controller_context = build_controller_context(classification.controller_dirs)
 
       # Phase 1: build all content in memory — no I/O.
       manifests = []
       manifests << build_shared(classification.shared_dirs)
-      classification.controller_dirs.each { |ctrl| manifests << build_controller(ctrl) }
+      classification.controller_dirs.each { |ctrl| manifests << build_controller(ctrl, controller_context) }
 
       migrate_legacy_manifests!
 
@@ -79,17 +81,85 @@ module ReactManifest
 
     # --------------------------------------------------------------- controller
 
-    def build_controller(ctrl)
+    def build_controller(ctrl, controller_context)
       lines = header_lines
+      dep_requires = controller_dependency_requires(ctrl[:bundle_name], controller_context)
 
       files = js_files_in(ctrl[:path])
-      if files.empty?
+      own_requires = files.map { |f| relative_require_path(f) }
+      all_requires = (dep_requires + own_requires).uniq
+
+      if all_requires.empty?
         lines << "// (no JSX files found in #{ctrl[:name]}/)"
       else
-        files.each { |f| lines << "//= require #{relative_require_path(f)}" }
+        all_requires.each { |req| lines << "//= require #{req}" }
       end
 
       { filename: "#{ctrl[:bundle_name]}.js", content: "#{lines.join("\n")}\n" }
+    end
+
+    def build_controller_context(controller_dirs)
+      bundle_files = {}
+      symbol_to_bundle = {}
+      dependencies = Hash.new { |h, k| h[k] = Set.new }
+
+      controller_dirs.each do |ctrl|
+        bundle_name = ctrl[:bundle_name]
+        files = js_files_in(ctrl[:path])
+        bundle_files[bundle_name] = files
+
+        files.each do |file_path|
+          extract_defined_symbols(file_path).each do |sym|
+            next unless sym.match?(/\A[A-Z][A-Za-z0-9_]*\z/)
+
+            symbol_to_bundle[sym] ||= bundle_name
+          end
+        end
+      end
+
+      bundle_files.each do |bundle_name, files|
+        files.each do |file_path|
+          extract_used_component_symbols(file_path).each do |sym|
+            dep_bundle = symbol_to_bundle[sym]
+            next unless dep_bundle && dep_bundle != bundle_name
+
+            dependencies[bundle_name] << dep_bundle
+          end
+        end
+      end
+
+      {
+        bundle_files: bundle_files,
+        dependencies: dependencies
+      }
+    end
+
+    def controller_dependency_requires(bundle_name, controller_context)
+      deps = transitive_dependencies(bundle_name, controller_context[:dependencies])
+      deps.flat_map { |dep_bundle| controller_context[:bundle_files].fetch(dep_bundle, []) }
+          .map { |abs_path| relative_require_path(abs_path) }
+          .uniq
+          .sort
+    end
+
+    def transitive_dependencies(bundle_name, dependency_map)
+      ordered = []
+      visiting = Set.new
+      visited = Set.new
+
+      walk = lambda do |current|
+        return if visited.include?(current) || visiting.include?(current)
+
+        visiting << current
+        dependency_map.fetch(current, Set.new).each { |dep| walk.call(dep) }
+        visiting.delete(current)
+
+        visited << current
+        ordered << current unless current == bundle_name
+      end
+
+      walk.call(bundle_name)
+      ordered
     end
 
     # --------------------------------------------------------------- write
@@ -207,6 +277,34 @@ module ReactManifest
       rel.sub(/\.js\.jsx$/, "").sub(/\.jsx$/, "").sub(/\.js$/, "")
     end
 
+    def extract_defined_symbols(file_path)
+      content = File.read(file_path, encoding: "utf-8")
+      symbols = []
+      ReactManifest::Scanner::DEFINITION_PATTERNS.each do |pattern|
+        content.scan(pattern) { |m| symbols << m[0] }
+      end
+      symbols.uniq
+    rescue Errno::ENOENT, Errno::EACCES, Encoding::InvalidByteSequenceError
+      []
+    end
+
+    def extract_used_component_symbols(file_path)
+      content = File.read(file_path, encoding: "utf-8")
+      symbols = []
+
+      content.scan(ReactManifest::Scanner::JSX_ELEMENT_PATTERN) { |m| symbols << m[0] }
+      content.scan(ReactManifest::Scanner::REACT_CREATE_PATTERN) { |m| symbols << m[0] }
+      content.scan(ReactManifest::Scanner::JSX_PROP_COMPONENT_PATTERN) { |m| symbols << m[0] }
+      content.scan(ReactManifest::Scanner::OBJECT_COMPONENT_PATTERN) { |m| symbols << m[0] }
+      content.scan(ReactManifest::Scanner::ARRAY_COMPONENT_LIST_PATTERN) do |m|
+        m[0].split(/\s*,\s*/).each { |sym| symbols << sym }
+      end
+
+      symbols.uniq
+    rescue Errno::ENOENT, Errno::EACCES, Encoding::InvalidByteSequenceError
+      []
+    end
+
     def auto_generated?(path)
       # Avoid TOCTOU: don't check existence separately — just attempt the read
       # and treat a missing/unreadable file as not auto-generated.
@@ -238,4 +336,5 @@ module ReactManifest
                    "#{counts[:skipped_pinned] || 0} skipped (not auto-generated)"
     end
   end
+  # rubocop:enable Metrics/ClassLength
 end

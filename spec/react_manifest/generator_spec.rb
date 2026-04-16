@@ -94,6 +94,27 @@ RSpec.describe ReactManifest::Generator do
       end
     end
 
+    it "includes dependent controller files when main uses a component from another app dir" do
+      dep_dir = Rails.root.join("app/assets/javascripts/ux/app/design_variables")
+      main_dir = Rails.root.join("app/assets/javascripts/ux/app/main")
+      FileUtils.mkdir_p(dep_dir)
+      FileUtils.mkdir_p(main_dir)
+
+      File.write(dep_dir.join("design_variable_show.js.jsx"), "const DesignVariableShow = () => <div />;\n")
+      main_index_content = <<~JS
+        const MainIndex = () => <WidgetHost components={[
+          DesignVariableShow,
+        ]} />;
+      JS
+      File.write(main_dir.join("main_index.js.jsx"), main_index_content)
+
+      generator.run!
+      content = read_manifest("ux_main.js")
+
+      expect(content).to include("ux/app/design_variables/design_variable_show")
+      expect(content).to include("ux/app/main/main_index")
+    end
+
     describe "idempotency" do
       it "does not change file if content is unchanged" do
         mtime_before = File.mtime(File.join(output_dir, "ux_shared.js"))
