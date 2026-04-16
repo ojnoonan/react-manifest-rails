@@ -205,5 +205,46 @@ RSpec.describe ReactManifest::Generator do
         expect(File.exist?(legacy_path)).to be false
       end
     end
+
+    describe "external_providers integration" do
+      it "includes the require path for an external provider symbol used in a controller" do
+        ReactManifest.configure do |c|
+          c.external_providers = { "MiniSearch" => "mini-search" }
+        end
+
+        ctrl_dir = Rails.root.join("app/assets/javascripts/ux/app/users")
+        FileUtils.mkdir_p(ctrl_dir)
+        File.write(ctrl_dir.join("users_index.js.jsx"),
+                   "const search = new MiniSearch({ fields: ['name'] });\n")
+
+        generator.run!
+        content = read_manifest("ux_users.js")
+
+        expect(content).to include("mini-search")
+      end
+    end
+
+    describe "external_roots integration" do
+      it "includes files from external_roots when their symbols are used" do
+        ext_dir = Rails.root.join("app", "assets", "javascripts", "ext_components")
+        FileUtils.mkdir_p(ext_dir)
+        File.write(ext_dir.join("fancy_widget.js"),
+                   "const FancyWidget = () => <div />;\n")
+
+        ReactManifest.configure do |c|
+          c.external_roots = [ext_dir.to_s]
+        end
+
+        ctrl_dir = Rails.root.join("app/assets/javascripts/ux/app/users")
+        FileUtils.mkdir_p(ctrl_dir)
+        File.write(ctrl_dir.join("users_index.js.jsx"),
+                   "const Page = () => <FancyWidget />;\n")
+
+        generator.run!
+        content = read_manifest("ux_users.js")
+
+        expect(content).to include("fancy_widget")
+      end
+    end
   end
 end

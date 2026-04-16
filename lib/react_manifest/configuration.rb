@@ -54,6 +54,27 @@ module ReactManifest
     # Independent from Rails.logger output.
     attr_accessor :stdout_logging
 
+    # Explicit symbol-to-require-path mapping for external globals.
+    # Use for third-party libraries that export a PascalCase or camelCase symbol
+    # not located inside ux_root (e.g. MiniSearch, Chart.js wrappers).
+    #
+    # Keys are exact symbol names (case-sensitive); values are the Sprockets
+    # require path that should be emitted into the controller manifest.
+    #
+    # Example:
+    #   config.external_providers = { "MiniSearch" => "mini-search", "axios" => "vendor/axios" }
+    attr_accessor :external_providers
+
+    # Extra root directories (absolute or relative to Rails.root) to scan for
+    # symbol definitions outside of ux_root.  Symbols found here are added to
+    # the shared symbol index and will trigger an include when used by a
+    # controller.  Empty by default; files in these dirs are subject to the
+    # same +exclude_paths+ and +extensions+ filters.
+    #
+    # Example:
+    #   config.external_roots = ["app/assets/javascripts/vendor_components"]
+    attr_accessor :external_roots
+
     def initialize
       @ux_root           = "app/assets/javascripts/ux"
       @app_dir           = "app"
@@ -68,6 +89,8 @@ module ReactManifest
       @dry_run           = false
       @verbose           = false
       @stdout_logging    = true
+      @external_providers = {}
+      @external_roots     = []
     end
 
     def dry_run?

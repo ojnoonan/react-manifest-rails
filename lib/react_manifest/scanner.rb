@@ -38,15 +38,13 @@ module ReactManifest
       /^export\s+class\s+([A-Z][A-Za-z0-9_]*)\s*(?:extends|\{)/ # export class Foo
     ].freeze
 
-    # Patterns to detect usage in controller files
-    JSX_ELEMENT_PATTERN      = %r{<([A-Z][A-Za-z0-9_]*)[\s/>]}
-    REACT_CREATE_PATTERN     = /React\.createElement\(\s*([A-Z][A-Za-z0-9_]*)[\s,)]/
-    JSX_PROP_COMPONENT_PATTERN = /[A-Za-z_][A-Za-z0-9_]*\s*=\s*\{\s*([A-Z][A-Za-z0-9_]*)\s*\}/
-    OBJECT_COMPONENT_PATTERN = /:\s*([A-Z][A-Za-z0-9_]*)\b/
-    ARRAY_COMPONENT_LIST_PATTERN = /\[\s*([A-Z][A-Za-z0-9_]*(?:\s*,\s*[A-Z][A-Za-z0-9_]*)*\s*,?)\s*\]/
-    HOOK_CALL_PATTERN        = /\b(use[A-Z][A-Za-z0-9_]*)\s*\(/
+    # Patterns to detect usage in controller files.
+    # Token-based patterns match any identifier occurrence regardless of syntax
+    # context (JSX, constructor, assignment, array, function argument, etc.).
+    PASCAL_TOKEN_PATTERN = /\b([A-Z][A-Za-z0-9_]*)\b/
+    HOOK_TOKEN_PATTERN   = /\b(use[A-Z][A-Za-z0-9_]*)\b/
     # Lib calls matched against known lib symbols to reduce false positives
-    LIB_CALL_PATTERN         = /\b([a-z][A-Za-z0-9_]{2,})\s*\(/
+    LIB_CALL_PATTERN     = /\b([a-z][A-Za-z0-9_]{2,})\s*\(/
 
     # Common JS built-ins to exclude from lib-call matching
     JS_BUILTINS = %w[
@@ -68,7 +66,7 @@ module ReactManifest
       warnings      = []
       symbol_index  = {}
 
-      # Phase 1: index symbols from shared dirs
+      # Phase 1a: index symbols from shared dirs
       classification.shared_dirs.each do |shared_dir|
         js_files_in(shared_dir[:path]).each do |file_path|
           relative = relative_require_path(file_path)
@@ -81,6 +79,23 @@ module ReactManifest
             end
           end
         end
+      end
+
+      # Phase 1b: index symbols from external_roots dirs
+      @config.external_roots.each do |root_path|
+        abs_root = abs_external_root(root_path)
+        js_files_in(abs_root).each do |file_path|
+          relative = relative_require_path(file_path)
+          symbols  = extract_definitions(file_path)
+          symbols.each do |sym|
+            symbol_index[sym] ||= relative
+          end
+        end
+      end
+
+      # Phase 1c: add explicit external_providers (highest precedence — wins on conflict)
+      @config.external_providers.each do |sym, require_path|
+        symbol_index[sym] = require_path
       end
 
       $stdout.puts "[ReactManifest] Shared symbol index: #{symbol_index.size} symbols indexed" if @config.verbose?
@@ -190,16 +205,37 @@ module ReactManifest
     def extract_used_shared_paths(content, symbol_index)
       used = Set.new
 
-      scan_component_usage(content, JSX_ELEMENT_PATTERN, symbol_index, used)
-      scan_component_usage(content, REACT_CREATE_PATTERN, symbol_index, used)
-      scan_component_usage(content, JSX_PROP_COMPONENT_PATTERN, symbol_index, used)
-      scan_component_usage(content, OBJECT_COMPONENT_PATTERN, symbol_index, used)
-      scan_array_component_usage(content, symbol_index, used)
-      scan_component_usage(content, HOOK_CALL_PATTERN, symbol_index, used)
+      # Collect locally-defined symbols so we don't count a file as "using"
+      # its own exports (avoid self-referencing false positives).
+      local_syms = Set.new
+      DEFINITION_PATTERNS.each do |pattern|
+        content.scan(pattern) { |m| local_syms << m[0] }
+      end
 
+      # PascalCase token scan: catches JSX elements, constructors (new Foo()),
+      # prop values, array entries, function arguments, assignments, etc.
+      content.scan(PASCAL_TOKEN_PATTERN) do |match|
+        sym = match[0]
+        next if local_syms.include?(sym)
+        next unless symbol_index.key?(sym)
+
+        used << symbol_index[sym]
+      end
+
+      # Hook token scan: catches useFoo(...) and bare useFoo references.
+      content.scan(HOOK_TOKEN_PATTERN) do |match|
+        sym = match[0]
+        next if local_syms.include?(sym)
+        next unless symbol_index.key?(sym)
+
+        used << symbol_index[sym]
+      end
+
+      # Lib call scan (lowercase): already filtered to symbol_index keys.
       content.scan(LIB_CALL_PATTERN) do |match|
         sym = match[0]
         next if JS_BUILTINS.include?(sym)
+        next if local_syms.include?(sym)
         next unless symbol_index.key?(sym)
 
         used << symbol_index[sym]
@@ -226,6 +262,12 @@ module ReactManifest
           used << symbol_index[sym]
         end
       end
+    end
+
+    def abs_external_root(path)
+      return path if Pathname.new(path).absolute?
+
+      Rails.root.join(path).to_s
     end
   end
 end

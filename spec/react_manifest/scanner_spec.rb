@@ -124,10 +124,128 @@ RSpec.describe ReactManifest::Scanner do
       expect(result.warnings.any? { |w| w.include?("High fan-out") && w.include?("primary_button") }).to be true
     end
 
-    it "does not infer dynamic React.createElement symbols" do
+    it "detects a component referenced as a bare token in a ternary expression" do
       result = scanner.scan(classifier.classify)
       products_usage = result.controller_usages["products"]
-      expect(products_usage.any? { |f| f.include?("icon_button") }).to be false
+      # IconButton appears as a bare token in `props.useAltButton ? IconButton : PrimaryButton`
+      # Token-based matching picks it up correctly.
+      expect(products_usage.any? { |f| f.include?("icon_button") }).to be true
+    end
+  end
+
+  describe "token-based symbol detection" do
+    # These specs verify that components/hooks/libs are detected via plain identifier
+    # token matching — not just JSX-tag or prop-specific patterns.
+
+    it "detects a PascalCase component used as a constructor (new ClassName(...))" do
+      ctrl_dir = Rails.root.join(config.ux_root, "app", "users")
+      FileUtils.mkdir_p(ctrl_dir)
+      File.write(ctrl_dir.join("users_search.js"),
+                 "const search = new PrimaryButton({ fields: ['name'] });\n")
+
+      result = scanner.scan(classifier.classify)
+      expect(result.controller_usages["users"].any? { |f| f.include?("primary_button") }).to be true
+    end
+
+    it "detects a component passed as a bare function argument" do
+      ctrl_dir = Rails.root.join(config.ux_root, "app", "users")
+      FileUtils.mkdir_p(ctrl_dir)
+      File.write(ctrl_dir.join("users_arg.js"),
+                 "render(PrimaryButton);\n")
+
+      result = scanner.scan(classifier.classify)
+      expect(result.controller_usages["users"].any? { |f| f.include?("primary_button") }).to be true
+    end
+
+    it "detects a component assigned to a variable (not JSX)" do
+      ctrl_dir = Rails.root.join(config.ux_root, "app", "users")
+      FileUtils.mkdir_p(ctrl_dir)
+      File.write(ctrl_dir.join("users_assign.js"),
+                 "const C = PrimaryButton;\n")
+
+      result = scanner.scan(classifier.classify)
+      expect(result.controller_usages["users"].any? { |f| f.include?("primary_button") }).to be true
+    end
+
+    it "detects a hook called without JSX context" do
+      ctrl_dir = Rails.root.join(config.ux_root, "app", "users")
+      FileUtils.mkdir_p(ctrl_dir)
+      File.write(ctrl_dir.join("users_hook.js"),
+                 "const data = useFetch('/api');\n")
+
+      result = scanner.scan(classifier.classify)
+      expect(result.controller_usages["users"].any? { |f| f.include?("use_fetch") }).to be true
+    end
+  end
+
+  describe "external_providers" do
+    it "adds explicit provider symbols to the symbol index" do
+      ReactManifest.configure do |c|
+        c.external_providers = { "MiniSearch" => "mini-search" }
+      end
+      result = scanner.scan(classifier.classify)
+      expect(result.symbol_index["MiniSearch"]).to eq("mini-search")
+    end
+
+    it "detects a constructor call against an external provider" do
+      ReactManifest.configure do |c|
+        c.external_providers = { "MiniSearch" => "mini-search" }
+      end
+      ctrl_dir = Rails.root.join(config.ux_root, "app", "users")
+      FileUtils.mkdir_p(ctrl_dir)
+      File.write(ctrl_dir.join("users_search.js"),
+                 "const search = new MiniSearch({ fields: ['name'] });\n")
+
+      result = scanner.scan(classifier.classify)
+      expect(result.controller_usages["users"]).to include("mini-search")
+    end
+
+    it "detects bare token usage of an external provider" do
+      ReactManifest.configure do |c|
+        c.external_providers = { "MiniSearch" => "mini-search" }
+      end
+      ctrl_dir = Rails.root.join(config.ux_root, "app", "users")
+      FileUtils.mkdir_p(ctrl_dir)
+      File.write(ctrl_dir.join("users_ms.js"),
+                 "import MiniSearch from 'minisearch';\nconst s = new MiniSearch({});\n")
+
+      result = scanner.scan(classifier.classify)
+      expect(result.controller_usages["users"]).to include("mini-search")
+    end
+  end
+
+  describe "external_roots" do
+    it "indexes symbols from dirs listed in external_roots" do
+      ext_dir = Rails.root.join("app", "assets", "javascripts", "ext_components")
+      FileUtils.mkdir_p(ext_dir)
+      File.write(ext_dir.join("fancy_widget.js"),
+                 "const FancyWidget = () => <div />;\n")
+
+      ReactManifest.configure do |c|
+        c.external_roots = [ext_dir.to_s]
+      end
+
+      result = scanner.scan(classifier.classify)
+      expect(result.symbol_index.keys).to include("FancyWidget")
+    end
+
+    it "detects usage of a symbol from an external root" do
+      ext_dir = Rails.root.join("app", "assets", "javascripts", "ext_components")
+      FileUtils.mkdir_p(ext_dir)
+      File.write(ext_dir.join("fancy_widget.js"),
+                 "const FancyWidget = () => <div />;\n")
+
+      ctrl_dir = Rails.root.join(config.ux_root, "app", "users")
+      FileUtils.mkdir_p(ctrl_dir)
+      File.write(ctrl_dir.join("users_fancy.js"),
+                 "const Page = () => <FancyWidget />;\n")
+
+      ReactManifest.configure do |c|
+        c.external_roots = [ext_dir.to_s]
+      end
+
+      result = scanner.scan(classifier.classify)
+      expect(result.controller_usages["users"].any? { |f| f.include?("fancy_widget") }).to be true
     end
   end
 

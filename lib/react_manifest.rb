@@ -165,14 +165,19 @@ module ReactManifest
 
     def extract_used_component_symbols(file_path)
       content = File.read(file_path, encoding: "utf-8")
-      symbols = []
 
-      content.scan(ReactManifest::Scanner::JSX_ELEMENT_PATTERN) { |m| symbols << m[0] }
-      content.scan(ReactManifest::Scanner::REACT_CREATE_PATTERN) { |m| symbols << m[0] }
-      content.scan(ReactManifest::Scanner::JSX_PROP_COMPONENT_PATTERN) { |m| symbols << m[0] }
-      content.scan(ReactManifest::Scanner::OBJECT_COMPONENT_PATTERN) { |m| symbols << m[0] }
-      content.scan(ReactManifest::Scanner::ARRAY_COMPONENT_LIST_PATTERN) do |m|
-        m[0].split(/\s*,\s*/).each { |sym| symbols << sym }
+      # Collect locally-defined symbols to avoid self-reference false positives
+      local_syms = Set.new
+      ReactManifest::Scanner::DEFINITION_PATTERNS.each do |pattern|
+        content.scan(pattern) { |m| local_syms << m[0] }
+      end
+
+      symbols = []
+      content.scan(ReactManifest::Scanner::PASCAL_TOKEN_PATTERN) do |m|
+        symbols << m[0] unless local_syms.include?(m[0])
+      end
+      content.scan(ReactManifest::Scanner::HOOK_TOKEN_PATTERN) do |m|
+        symbols << m[0] unless local_syms.include?(m[0])
       end
 
       symbols.uniq

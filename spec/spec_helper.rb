@@ -218,15 +218,15 @@ module ReactManifest
 
     def extract_used_component_symbols(file_path)
       content = File.read(file_path, encoding: "utf-8")
-      symbols = []
 
-      content.scan(Scanner::JSX_ELEMENT_PATTERN) { |m| symbols << m[0] }
-      content.scan(Scanner::REACT_CREATE_PATTERN) { |m| symbols << m[0] }
-      content.scan(Scanner::JSX_PROP_COMPONENT_PATTERN) { |m| symbols << m[0] }
-      content.scan(Scanner::OBJECT_COMPONENT_PATTERN) { |m| symbols << m[0] }
-      content.scan(Scanner::ARRAY_COMPONENT_LIST_PATTERN) do |m|
-        m[0].split(/\s*,\s*/).each { |sym| symbols << sym }
+      local_syms = Set.new
+      Scanner::DEFINITION_PATTERNS.each do |pattern|
+        content.scan(pattern) { |m| local_syms << m[0] }
       end
+
+      symbols = []
+      content.scan(Scanner::PASCAL_TOKEN_PATTERN) { |m| symbols << m[0] unless local_syms.include?(m[0]) }
+      content.scan(Scanner::HOOK_TOKEN_PATTERN)   { |m| symbols << m[0] unless local_syms.include?(m[0]) }
 
       symbols.uniq
     rescue Errno::ENOENT, Errno::EACCES, Encoding::InvalidByteSequenceError

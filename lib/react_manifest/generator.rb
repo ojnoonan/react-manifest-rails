@@ -84,10 +84,11 @@ module ReactManifest
     def build_controller(ctrl, controller_context)
       lines = header_lines
       dep_requires = controller_dependency_requires(ctrl[:bundle_name], controller_context)
+      ext_reqs = controller_context[:external_requires].fetch(ctrl[:bundle_name], Set.new).to_a.sort
 
       files = js_files_in(ctrl[:path])
       own_requires = files.map { |f| relative_require_path(f) }
-      all_requires = (dep_requires + own_requires).uniq
+      all_requires = (dep_requires + ext_reqs + own_requires).uniq
 
       if all_requires.empty?
         lines << "// (no JSX files found in #{ctrl[:name]}/)"
@@ -101,8 +102,11 @@ module ReactManifest
     def build_controller_context(controller_dirs)
       bundle_files = {}
       symbol_to_bundle = {}
+      external_symbol_to_require = {}
       dependencies = Hash.new { |h, k| h[k] = Set.new }
+      external_requires = Hash.new { |h, k| h[k] = Set.new }
 
+      # Index controller-defined symbols for cross-app detection
       controller_dirs.each do |ctrl|
         bundle_name = ctrl[:bundle_name]
         files = js_files_in(ctrl[:path])
@@ -117,20 +121,39 @@ module ReactManifest
         end
       end
 
+      # Index symbols from external_roots dirs
+      @config.external_roots.each do |root_path|
+        abs_root = abs_external_root(root_path)
+        external_js_files_in(abs_root).each do |file_path|
+          req_path = relative_require_path(file_path)
+          extract_defined_symbols(file_path).each do |sym|
+            external_symbol_to_require[sym] ||= req_path
+          end
+        end
+      end
+
+      # Explicit external_providers win over scanned roots on symbol conflicts
+      @config.external_providers.each do |sym, req_path|
+        external_symbol_to_require[sym] = req_path
+      end
+
+      # Compute per-bundle cross-app and external dependencies
       bundle_files.each do |bundle_name, files|
         files.each do |file_path|
           extract_used_component_symbols(file_path).each do |sym|
             dep_bundle = symbol_to_bundle[sym]
-            next unless dep_bundle && dep_bundle != bundle_name
+            dependencies[bundle_name] << dep_bundle if dep_bundle && dep_bundle != bundle_name
 
-            dependencies[bundle_name] << dep_bundle
+            req_path = external_symbol_to_require[sym]
+            external_requires[bundle_name] << req_path if req_path
           end
         end
       end
 
       {
         bundle_files: bundle_files,
-        dependencies: dependencies
+        dependencies: dependencies,
+        external_requires: external_requires
       }
     end
 
@@ -290,19 +313,39 @@ module ReactManifest
 
     def extract_used_component_symbols(file_path)
       content = File.read(file_path, encoding: "utf-8")
-      symbols = []
 
-      content.scan(ReactManifest::Scanner::JSX_ELEMENT_PATTERN) { |m| symbols << m[0] }
-      content.scan(ReactManifest::Scanner::REACT_CREATE_PATTERN) { |m| symbols << m[0] }
-      content.scan(ReactManifest::Scanner::JSX_PROP_COMPONENT_PATTERN) { |m| symbols << m[0] }
-      content.scan(ReactManifest::Scanner::OBJECT_COMPONENT_PATTERN) { |m| symbols << m[0] }
-      content.scan(ReactManifest::Scanner::ARRAY_COMPONENT_LIST_PATTERN) do |m|
-        m[0].split(/\s*,\s*/).each { |sym| symbols << sym }
+      # Collect locally-defined symbols to avoid self-reference false positives
+      local_syms = Set.new
+      ReactManifest::Scanner::DEFINITION_PATTERNS.each do |pattern|
+        content.scan(pattern) { |m| local_syms << m[0] }
+      end
+
+      symbols = []
+      content.scan(ReactManifest::Scanner::PASCAL_TOKEN_PATTERN) do |m|
+        symbols << m[0] unless local_syms.include?(m[0])
+      end
+      content.scan(ReactManifest::Scanner::HOOK_TOKEN_PATTERN) do |m|
+        symbols << m[0] unless local_syms.include?(m[0])
       end
 
       symbols.uniq
     rescue Errno::ENOENT, Errno::EACCES, Encoding::InvalidByteSequenceError
       []
+    end
+
+    def external_js_files_in(dir)
+      return [] unless Dir.exist?(dir)
+
+      Dir.glob(File.join(dir, "**", @config.extensions_glob))
+         .reject { |f| File.directory?(f) }
+         .reject { |f| excluded_path?(f) }
+         .sort
+    end
+
+    def abs_external_root(path)
+      return path if Pathname.new(path).absolute?
+
+      Rails.root.join(path).to_s
     end
 
     def auto_generated?(path)

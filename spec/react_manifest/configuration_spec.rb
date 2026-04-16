@@ -138,4 +138,27 @@ RSpec.describe ReactManifest::Configuration do
       expect(config.stdout_logging?).to be false
     end
   end
+
+  describe "external_providers" do
+    it "defaults to an empty hash" do
+      expect(config.external_providers).to eq({})
+    end
+
+    it "accepts a symbol-to-require-path mapping" do
+      config.external_providers = { "MiniSearch" => "mini-search", "axios" => "axios" }
+      expect(config.external_providers["MiniSearch"]).to eq("mini-search")
+      expect(config.external_providers["axios"]).to eq("axios")
+    end
+  end
+
+  describe "external_roots" do
+    it "defaults to an empty array" do
+      expect(config.external_roots).to eq([])
+    end
+
+    it "accepts an array of directory paths" do
+      config.external_roots = ["app/assets/javascripts/vendor_components"]
+      expect(config.external_roots).to eq(["app/assets/javascripts/vendor_components"])
+    end
+  end
 end
