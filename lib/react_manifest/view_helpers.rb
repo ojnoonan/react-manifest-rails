@@ -21,6 +21,10 @@ module ReactManifest
       bundles = ReactManifest.resolve_bundles(ctrl)
       return "".html_safe if bundles.empty?
 
+      # Record emitted bundles so react_component doesn't re-emit them.
+      emitted = (@_react_manifest_emitted_bundles ||= [])
+      bundles.each { |b| emitted << b unless emitted.include?(b) }
+
       asset_names = bundles.map { |bundle| "#{bundle}.js" }
       javascript_include_tag(*asset_names, extname: false, **html_options)
     end

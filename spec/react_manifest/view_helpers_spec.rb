@@ -254,8 +254,8 @@ RSpec.describe ReactManifest::ViewHelpers do
         "<div data-react-component='#{name}'></div>"
       end
 
-      def javascript_include_tag(name, **_opts)
-        "<script src='#{name}.js'></script>"
+      def javascript_include_tag(*names, **_opts)
+        names.map { |name| "<script src='#{name}.js'></script>" }.join
       end
 
       def safe_join(parts)
@@ -387,5 +387,37 @@ RSpec.describe ReactManifest::ViewHelpers do
     html = host_class.new.react_component("MainIndex")
     expect(html).to include("ux_design_variables.js")
     expect(html).to include("ux_main.js")
+  end
+
+  describe "react_bundle_tag + react_component deduplication" do
+    let(:host_with_bundle_tag) do
+      Class.new(base_class) do
+        include ReactManifest::ViewHelpers
+
+        attr_reader :controller_path
+
+        def initialize(ctrl)
+          super()
+          @controller_path = ctrl
+        end
+
+        def respond_to?(sym, include_private = false) # rubocop:disable Style/OptionalBooleanParameter
+          sym == :controller_path || super
+        end
+      end
+    end
+
+    it "does not re-emit bundles already loaded by react_bundle_tag" do
+      view = host_with_bundle_tag.new("users")
+
+      bundle_html = view.react_bundle_tag
+      expect(bundle_html).to include("ux_shared.js")
+      expect(bundle_html).to include("ux_users.js")
+
+      component_html = view.react_component("UsersIndex")
+      expect(component_html).not_to include("ux_users.js"),
+                                    "react_component should not re-emit bundles already loaded by react_bundle_tag"
+      expect(component_html).to include("data-react-component='UsersIndex'")
+    end
   end
 end
