@@ -169,6 +169,11 @@ module ReactManifest
 
       content.scan(ReactManifest::Scanner::JSX_ELEMENT_PATTERN) { |m| symbols << m[0] }
       content.scan(ReactManifest::Scanner::REACT_CREATE_PATTERN) { |m| symbols << m[0] }
+      content.scan(ReactManifest::Scanner::JSX_PROP_COMPONENT_PATTERN) { |m| symbols << m[0] }
+      content.scan(ReactManifest::Scanner::OBJECT_COMPONENT_PATTERN) { |m| symbols << m[0] }
+      content.scan(ReactManifest::Scanner::ARRAY_COMPONENT_LIST_PATTERN) do |m|
+        m[0].split(/\s*,\s*/).each { |sym| symbols << sym }
+      end
 
       symbols.uniq
     rescue Errno::ENOENT, Errno::EACCES, Encoding::InvalidByteSequenceError

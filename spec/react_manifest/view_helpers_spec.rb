@@ -157,6 +157,84 @@ RSpec.describe ReactManifest do
 
       expect(described_class.resolve_bundles_for_component("AccountShow")).to eq(%w[ux_user_session ux_account])
     end
+
+    it "resolves cross-controller dependencies for main pages" do
+      dep_dir = Rails.root.join("app/assets/javascripts/ux/app/design_variables")
+      app_dir = Rails.root.join("app/assets/javascripts/ux/app/main")
+      FileUtils.mkdir_p(dep_dir)
+      FileUtils.mkdir_p(app_dir)
+
+      File.write(dep_dir.join("design_variable_show.js.jsx"), "const DesignVariableShow = () => <div />;\n")
+      File.write(app_dir.join("main_index.js.jsx"), "const MainIndex = () => <DesignVariableShow />;\n")
+
+      ReactManifest::Generator.new(ReactManifest.configuration).run!
+
+      expect(described_class.resolve_bundles_for_component("MainIndex")).to eq(%w[ux_design_variables ux_main])
+    end
+
+    it "resolves dependencies when a component is passed via JSX props" do
+      dep_dir = Rails.root.join("app/assets/javascripts/ux/app/design_variables")
+      app_dir = Rails.root.join("app/assets/javascripts/ux/app/main")
+      FileUtils.mkdir_p(dep_dir)
+      FileUtils.mkdir_p(app_dir)
+
+      File.write(dep_dir.join("design_variable_show.js.jsx"), "const DesignVariableShow = () => <div />;\n")
+      main_index_content = "const MainIndex = () => <WidgetHost contentComponent={DesignVariableShow} />;\n"
+      File.write(app_dir.join("main_index.js.jsx"), main_index_content)
+
+      ReactManifest::Generator.new(ReactManifest.configuration).run!
+
+      expect(described_class.resolve_bundles_for_component("MainIndex")).to eq(%w[ux_design_variables ux_main])
+    end
+
+    it "resolves dependencies when a component is passed as an object value" do
+      dep_dir = Rails.root.join("app/assets/javascripts/ux/app/design_variables")
+      app_dir = Rails.root.join("app/assets/javascripts/ux/app/main")
+      FileUtils.mkdir_p(dep_dir)
+      FileUtils.mkdir_p(app_dir)
+
+      File.write(dep_dir.join("design_variable_show.js.jsx"), "const DesignVariableShow = () => <div />;\n")
+      main_index_content = "const MainIndex = () => <WidgetHost options={{ component: DesignVariableShow }} />;\n"
+      File.write(app_dir.join("main_index.js.jsx"), main_index_content)
+
+      ReactManifest::Generator.new(ReactManifest.configuration).run!
+
+      expect(described_class.resolve_bundles_for_component("MainIndex")).to eq(%w[ux_design_variables ux_main])
+    end
+
+    it "resolves dependencies when components are passed in arrays" do
+      dep_dir = Rails.root.join("app/assets/javascripts/ux/app/design_variables")
+      app_dir = Rails.root.join("app/assets/javascripts/ux/app/main")
+      FileUtils.mkdir_p(dep_dir)
+      FileUtils.mkdir_p(app_dir)
+
+      File.write(dep_dir.join("design_variable_show.js.jsx"), "const DesignVariableShow = () => <div />;\n")
+      main_index_content = "const MainIndex = () => <WidgetHost components={[DesignVariableShow]} />;\n"
+      File.write(app_dir.join("main_index.js.jsx"), main_index_content)
+
+      ReactManifest::Generator.new(ReactManifest.configuration).run!
+
+      expect(described_class.resolve_bundles_for_component("MainIndex")).to eq(%w[ux_design_variables ux_main])
+    end
+
+    it "resolves dependencies when array components are on separate lines" do
+      dep_dir = Rails.root.join("app/assets/javascripts/ux/app/design_variables")
+      app_dir = Rails.root.join("app/assets/javascripts/ux/app/main")
+      FileUtils.mkdir_p(dep_dir)
+      FileUtils.mkdir_p(app_dir)
+
+      File.write(dep_dir.join("design_variable_show.js.jsx"), "const DesignVariableShow = () => <div />;\n")
+      main_index_content = <<~JS
+        const MainIndex = () => <WidgetHost components={[
+          DesignVariableShow,
+        ]} />;
+      JS
+      File.write(app_dir.join("main_index.js.jsx"), main_index_content)
+
+      ReactManifest::Generator.new(ReactManifest.configuration).run!
+
+      expect(described_class.resolve_bundles_for_component("MainIndex")).to eq(%w[ux_design_variables ux_main])
+    end
   end
 end
 
@@ -221,5 +299,93 @@ RSpec.describe ReactManifest::ViewHelpers do
     html = host_class.new.react_component("AccountShow")
     expect(html).to include("ux_user_session.js")
     expect(html).to include("ux_account.js")
+  end
+
+  it "injects design-variables bundle when MainIndex uses DesignVariableShow" do
+    dep_dir = Rails.root.join("app/assets/javascripts/ux/app/design_variables")
+    app_dir = Rails.root.join("app/assets/javascripts/ux/app/main")
+    FileUtils.mkdir_p(dep_dir)
+    FileUtils.mkdir_p(app_dir)
+
+    File.write(dep_dir.join("design_variable_show.js.jsx"), "const DesignVariableShow = () => <div />;\n")
+    File.write(app_dir.join("main_index.js.jsx"), "const MainIndex = () => <DesignVariableShow />;\n")
+
+    ReactManifest::Generator.new(ReactManifest.configuration).run!
+
+    html = host_class.new.react_component("MainIndex")
+    expect(html).to include("ux_design_variables.js")
+    expect(html).to include("ux_main.js")
+  end
+
+  it "injects dependency bundle when component is passed as JSX prop" do
+    dep_dir = Rails.root.join("app/assets/javascripts/ux/app/design_variables")
+    app_dir = Rails.root.join("app/assets/javascripts/ux/app/main")
+    FileUtils.mkdir_p(dep_dir)
+    FileUtils.mkdir_p(app_dir)
+
+    File.write(dep_dir.join("design_variable_show.js.jsx"), "const DesignVariableShow = () => <div />;\n")
+    main_index_content = "const MainIndex = () => <WidgetHost contentComponent={DesignVariableShow} />;\n"
+    File.write(app_dir.join("main_index.js.jsx"), main_index_content)
+
+    ReactManifest::Generator.new(ReactManifest.configuration).run!
+
+    html = host_class.new.react_component("MainIndex")
+    expect(html).to include("ux_design_variables.js")
+    expect(html).to include("ux_main.js")
+  end
+
+  it "injects dependency bundle when component is passed as object value" do
+    dep_dir = Rails.root.join("app/assets/javascripts/ux/app/design_variables")
+    app_dir = Rails.root.join("app/assets/javascripts/ux/app/main")
+    FileUtils.mkdir_p(dep_dir)
+    FileUtils.mkdir_p(app_dir)
+
+    File.write(dep_dir.join("design_variable_show.js.jsx"), "const DesignVariableShow = () => <div />;\n")
+    main_index_content = "const MainIndex = () => <WidgetHost options={{ component: DesignVariableShow }} />;\n"
+    File.write(app_dir.join("main_index.js.jsx"), main_index_content)
+
+    ReactManifest::Generator.new(ReactManifest.configuration).run!
+
+    html = host_class.new.react_component("MainIndex")
+    expect(html).to include("ux_design_variables.js")
+    expect(html).to include("ux_main.js")
+  end
+
+  it "injects dependency bundle when components are passed in arrays" do
+    dep_dir = Rails.root.join("app/assets/javascripts/ux/app/design_variables")
+    app_dir = Rails.root.join("app/assets/javascripts/ux/app/main")
+    FileUtils.mkdir_p(dep_dir)
+    FileUtils.mkdir_p(app_dir)
+
+    File.write(dep_dir.join("design_variable_show.js.jsx"), "const DesignVariableShow = () => <div />;\n")
+    main_index_content = "const MainIndex = () => <WidgetHost components={[DesignVariableShow]} />;\n"
+    File.write(app_dir.join("main_index.js.jsx"), main_index_content)
+
+    ReactManifest::Generator.new(ReactManifest.configuration).run!
+
+    html = host_class.new.react_component("MainIndex")
+    expect(html).to include("ux_design_variables.js")
+    expect(html).to include("ux_main.js")
+  end
+
+  it "injects dependency bundle when array components are on separate lines" do
+    dep_dir = Rails.root.join("app/assets/javascripts/ux/app/design_variables")
+    app_dir = Rails.root.join("app/assets/javascripts/ux/app/main")
+    FileUtils.mkdir_p(dep_dir)
+    FileUtils.mkdir_p(app_dir)
+
+    File.write(dep_dir.join("design_variable_show.js.jsx"), "const DesignVariableShow = () => <div />;\n")
+    main_index_content = <<~JS
+      const MainIndex = () => <WidgetHost components={[
+        DesignVariableShow,
+      ]} />;
+    JS
+    File.write(app_dir.join("main_index.js.jsx"), main_index_content)
+
+    ReactManifest::Generator.new(ReactManifest.configuration).run!
+
+    html = host_class.new.react_component("MainIndex")
+    expect(html).to include("ux_design_variables.js")
+    expect(html).to include("ux_main.js")
   end
 end

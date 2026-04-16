@@ -41,6 +41,9 @@ module ReactManifest
     # Patterns to detect usage in controller files
     JSX_ELEMENT_PATTERN      = %r{<([A-Z][A-Za-z0-9_]*)[\s/>]}
     REACT_CREATE_PATTERN     = /React\.createElement\(\s*([A-Z][A-Za-z0-9_]*)[\s,)]/
+    JSX_PROP_COMPONENT_PATTERN = /[A-Za-z_][A-Za-z0-9_]*\s*=\s*\{\s*([A-Z][A-Za-z0-9_]*)\s*\}/
+    OBJECT_COMPONENT_PATTERN = /:\s*([A-Z][A-Za-z0-9_]*)\b/
+    ARRAY_COMPONENT_LIST_PATTERN = /\[\s*([A-Z][A-Za-z0-9_]*(?:\s*,\s*[A-Z][A-Za-z0-9_]*)*\s*,?)\s*\]/
     HOOK_CALL_PATTERN        = /\b(use[A-Z][A-Za-z0-9_]*)\s*\(/
     # Lib calls matched against known lib symbols to reduce false positives
     LIB_CALL_PATTERN         = /\b([a-z][A-Za-z0-9_]{2,})\s*\(/
@@ -93,41 +96,10 @@ module ReactManifest
 
         files.each do |file_path|
           validate_naming(file_path, ctrl[:name], warnings)
-          begin
-            content = File.read(file_path, encoding: "utf-8")
-          rescue Errno::ENOENT, Errno::EACCES => e
-            warnings << "Skipping #{file_path}: #{e.message}"
-            next
-          rescue Encoding::InvalidByteSequenceError
-            warnings << "Skipping #{file_path}: not valid UTF-8"
-            next
-          end
+          content = read_controller_file(file_path, warnings)
+          next unless content
 
-          # JSX element usage: <PrimaryButton (JSX tag syntax)
-          content.scan(JSX_ELEMENT_PATTERN) do |match|
-            sym = match[0]
-            used << symbol_index[sym] if symbol_index.key?(sym)
-          end
-
-          # React.createElement(PrimaryButton, ...) (non-JSX style)
-          content.scan(REACT_CREATE_PATTERN) do |match|
-            sym = match[0]
-            used << symbol_index[sym] if symbol_index.key?(sym)
-          end
-
-          # Hook calls: useFetch(
-          content.scan(HOOK_CALL_PATTERN) do |match|
-            sym = match[0]
-            used << symbol_index[sym] if symbol_index.key?(sym)
-          end
-
-          # Lib function calls: formatDate( — filtered against lib symbol index
-          content.scan(LIB_CALL_PATTERN) do |match|
-            sym = match[0]
-            next if JS_BUILTINS.include?(sym)
-
-            used << symbol_index[sym] if symbol_index.key?(sym)
-          end
+          used.merge(extract_used_shared_paths(content, symbol_index))
         end
 
         controller_usages[ctrl[:name]] = used.to_a.sort
@@ -201,6 +173,57 @@ module ReactManifest
         if count > 3
           warnings << "High fan-out: '#{file}' is used by #{count} controllers " \
                       "(consider ensuring it's in the shared bundle)"
+        end
+      end
+    end
+
+    def read_controller_file(file_path, warnings)
+      File.read(file_path, encoding: "utf-8")
+    rescue Errno::ENOENT, Errno::EACCES => e
+      warnings << "Skipping #{file_path}: #{e.message}"
+      nil
+    rescue Encoding::InvalidByteSequenceError
+      warnings << "Skipping #{file_path}: not valid UTF-8"
+      nil
+    end
+
+    def extract_used_shared_paths(content, symbol_index)
+      used = Set.new
+
+      scan_component_usage(content, JSX_ELEMENT_PATTERN, symbol_index, used)
+      scan_component_usage(content, REACT_CREATE_PATTERN, symbol_index, used)
+      scan_component_usage(content, JSX_PROP_COMPONENT_PATTERN, symbol_index, used)
+      scan_component_usage(content, OBJECT_COMPONENT_PATTERN, symbol_index, used)
+      scan_array_component_usage(content, symbol_index, used)
+      scan_component_usage(content, HOOK_CALL_PATTERN, symbol_index, used)
+
+      content.scan(LIB_CALL_PATTERN) do |match|
+        sym = match[0]
+        next if JS_BUILTINS.include?(sym)
+        next unless symbol_index.key?(sym)
+
+        used << symbol_index[sym]
+      end
+
+      used
+    end
+
+    def scan_component_usage(content, pattern, symbol_index, used)
+      content.scan(pattern) do |match|
+        sym = match[0]
+        next unless symbol_index.key?(sym)
+
+        used << symbol_index[sym]
+      end
+    end
+
+    def scan_array_component_usage(content, symbol_index, used)
+      content.scan(ARRAY_COMPONENT_LIST_PATTERN) do |match|
+        list = match[0]
+        list.split(/\s*,\s*/).each do |sym|
+          next unless symbol_index.key?(sym)
+
+          used << symbol_index[sym]
         end
       end
     end
