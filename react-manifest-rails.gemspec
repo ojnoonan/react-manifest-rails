@@ -40,7 +40,7 @@ Gem::Specification.new do |spec|
   spec.add_development_dependency "rails", ">= 7.0", "< 9"
   spec.add_development_dependency "rake"
   spec.add_development_dependency "rspec",       "~> 3.12"
-  spec.add_development_dependency "rspec-rails", "~> 6.0"
+  spec.add_development_dependency "rspec-rails", "~> 8.0"
   spec.add_development_dependency "sprockets-rails"
   # listen is a soft runtime dependency (file watching in development).
   # The gem gracefully degrades without it; add to your app's Gemfile:
