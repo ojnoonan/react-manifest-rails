@@ -1,8 +1,9 @@
 name: Test and Release
 
 on:
-  release:
-    types: [published]
+  push:
+    tags:
+      - 'v*'
 
 jobs:
   test:
@@ -28,6 +29,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       id-token: write
+      contents: write
 
     steps:
     - uses: actions/checkout@v4
@@ -37,6 +39,12 @@ jobs:
       with:
         ruby-version: '3.3'
         bundler-cache: true
+
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: ${{ github.ref_name }}
+        generate_release_notes: true
 
     - name: Publish to RubyGems
       uses: rubygems/release-gem@v1
