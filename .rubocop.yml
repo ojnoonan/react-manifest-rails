@@ -44,6 +44,9 @@ Gemspec/DevelopmentDependencies:
 Metrics/ClassLength:
   Max: 200
 
+Metrics/ModuleLength:
+  Max: 140
+
 Metrics/AbcSize:
   Max: 70
   Exclude:
