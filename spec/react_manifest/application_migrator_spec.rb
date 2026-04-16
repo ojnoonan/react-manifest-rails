@@ -16,6 +16,23 @@ RSpec.describe ReactManifest::ApplicationMigrator do
   let(:app_js_path) { File.join(config.abs_output_dir, "application.js") }
 
   describe "#migrate!" do
+    it "keeps unknown non-ux requires in migrated file" do
+      File.write(
+        app_js_path,
+        <<~JS
+          //= require react/react.min
+          //= require mini-search
+          //= require_tree ./ux
+        JS
+      )
+
+      migrator.migrate!
+      content = File.read(app_js_path, encoding: "utf-8")
+
+      expect(content).to include("//= require mini-search")
+      expect(content).not_to include("//= require_tree ./ux")
+    end
+
     it "creates a .bak backup before writing" do
       migrator.migrate!
       expect(File.exist?("#{app_js_path}.bak")).to be true
@@ -45,6 +62,14 @@ RSpec.describe ReactManifest::ApplicationMigrator do
       migrator.migrate!
       content = File.read(app_js_path, encoding: "utf-8")
       expect(content).to include("react-manifest-rails")
+    end
+
+    it "does not duplicate managed header on repeated migration" do
+      migrator.migrate!
+      migrator.migrate!
+
+      content = File.read(app_js_path, encoding: "utf-8")
+      expect(content.scan("Managed by react-manifest-rails").size).to eq(1)
     end
 
     describe "dry_run mode" do

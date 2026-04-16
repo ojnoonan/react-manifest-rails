@@ -1,6 +1,6 @@
 module ReactManifest
   # Rewrites application*.js files to remove UX/app code requires,
-  # keeping only vendor lib requires.
+  # while preserving all non-UX directives.
   #
   # Safety:
   #   - Creates a .bak backup before any write; aborts if backup fails
@@ -9,6 +9,12 @@ module ReactManifest
   #   - Adds a managed-by comment at the top
   class ApplicationMigrator
     MANAGED_COMMENT = <<~JS.freeze
+      // Non-UX libraries — loaded on every page.
+      // React app code is now served per-controller via react_bundle_tag.
+      // Managed by react-manifest-rails — do not add require_tree.
+    JS
+
+    LEGACY_MANAGED_COMMENT = <<~JS.freeze
       // Vendor libraries — loaded on every page.
       // React app code is now served per-controller via react_bundle_tag.
       // Managed by react-manifest-rails — do not add require_tree.
@@ -70,11 +76,12 @@ module ReactManifest
 
     def build_new_content(result)
       kept_lines = result.directives
-                         .select do |d|
-        %i[vendor
-           passthrough].include?(d.classification)
+                         .reject do |d|
+        d.classification == :ux_code
       end
                                           .map(&:original_line)
+
+      strip_managed_header!(kept_lines)
 
       # Remove leading blank lines from kept_lines
       kept_lines.shift while kept_lines.first&.strip&.empty?
@@ -85,6 +92,25 @@ module ReactManifest
       lines << "" # trailing newline
 
       lines.join("\n")
+    end
+
+    def strip_managed_header!(lines)
+      managed_variants = [MANAGED_COMMENT, LEGACY_MANAGED_COMMENT].map { |comment| comment.lines.map(&:chomp) }
+
+      loop do
+        matched = managed_variants.any? { |managed_lines| starts_with_lines?(lines, managed_lines) }
+        break unless matched
+
+        header_len = managed_variants.find { |managed_lines| starts_with_lines?(lines, managed_lines) }.length
+        lines.shift(header_len)
+        lines.shift while lines.first&.strip&.empty?
+      end
+    end
+
+    def starts_with_lines?(lines, prefix)
+      return false if lines.length < prefix.length
+
+      lines.first(prefix.length) == prefix
     end
 
     def print_diff(file, new_content)

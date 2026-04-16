@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.10] - 2026-04-16
+
+### Fixed
+- `ApplicationMigrator` now removes only `ux`-classified directives and preserves non-UX requires in `application*.js`, preventing accidental removal of root-level assets such as `mini-search`.
+- Re-running migration/setup no longer duplicates the managed header comment block in `application*.js`.
+
+### Added
+- Regression coverage for preserving unknown non-UX requires during migration.
+- Regression coverage for idempotent managed-header behavior on repeated migration runs.
+- Dummy app root-level fixture assets (`axios.min.js`, `mini-search.js`) and corresponding requires in `application.js` / `application_dev.js` to verify setup behavior before release.
+
 ## [0.2.9] - 2026-04-15
 
 ### Added
