@@ -130,7 +130,6 @@ module ReactManifest
         warnings.add("Controller dir '#{ctrl[:name]}' has no JS/JSX files") if files.empty? && @config.verbose?
 
         files.each do |file_path|
-          validate_naming(file_path, ctrl[:name], warnings)
           content = read_controller_file(file_path, warnings)
           next unless content
 
@@ -189,15 +188,6 @@ module ReactManifest
       rel  = abs_path.sub(base, "")
       # Strip Sprockets-understood extensions: .js.jsx/.jsx/.js -> logical path.
       rel.sub(/\.js\.jsx$/, "").sub(/\.jsx$/, "").sub(/\.js$/, "")
-    end
-
-    def validate_naming(file_path, ctrl_name, warnings)
-      basename = File.basename(file_path, ".*").sub(/\.js$/, "")
-      # Expected: <controller>_index, <controller>_show, <controller>_form, etc.
-      return if basename.start_with?("#{ctrl_name}_") || basename == ctrl_name
-
-      warnings.add("File '#{File.basename(file_path)}' in '#{ctrl_name}' does not follow " \
-                   "'#{ctrl_name}_<action>.js.jsx' naming convention")
     end
 
     def detect_shared_violations(shared_file_paths, controller_symbol_index, warnings)

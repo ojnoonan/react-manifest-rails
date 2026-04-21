@@ -75,6 +75,26 @@ RSpec.describe ReactManifest::Generator do
       expect(content).to include("ux/app/main/main_index")
     end
 
+    it "inlines always_include bundle files into controller manifests" do
+      ReactManifest.configure do |c|
+        c.always_include = ["ux_main"]
+      end
+
+      main_dir = Rails.root.join("app/assets/javascripts/ux/app/main")
+      users_dir = Rails.root.join("app/assets/javascripts/ux/app/users")
+      FileUtils.mkdir_p(main_dir)
+      FileUtils.mkdir_p(users_dir)
+
+      File.write(main_dir.join("main_index.js.jsx"), "const MainIndex = () => <div />;\n")
+      File.write(users_dir.join("users_index.js.jsx"), "const UsersIndex = () => <div />;\n")
+
+      generator.run!
+      content = read_manifest("ux_users.js")
+
+      expect(content).to include("ux/app/main/main_index")
+      expect(content).to include("ux/app/users/users_index")
+    end
+
     describe "idempotency" do
       it "does not change file if content is unchanged" do
         mtime_before = File.mtime(File.join(output_dir, "ux_notifications.js"))

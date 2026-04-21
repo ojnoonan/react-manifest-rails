@@ -96,15 +96,6 @@ RSpec.describe ReactManifest::Scanner do
   end
 
   describe "Phase 3: warnings" do
-    it "warns about files not matching <controller>_*.js.jsx naming convention" do
-      # Write a mis-named file
-      bad_file = File.join(Rails.root.join(config.ux_root, "app", "users").to_s, "index.js.jsx")
-      File.write(bad_file, "// bad name")
-
-      result = scanner.scan(classifier.classify)
-      expect(result.warnings.any? { |w| w.include?("naming convention") }).to be true
-    end
-
     it "warns when a shared file is used by many controllers" do
       result = scanner.scan(classifier.classify)
       expect(result.warnings.any? { |w| w.include?("High fan-out") && w.include?("primary_button") }).to be true

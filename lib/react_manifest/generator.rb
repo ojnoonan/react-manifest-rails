@@ -66,6 +66,7 @@ module ReactManifest
 
     def build_controller(ctrl, controller_context)
       lines = header_lines
+      always_include_reqs = controller_context[:always_include_requires].fetch(ctrl[:bundle_name], [])
       dep_requires = controller_dependency_requires(ctrl[:bundle_name], controller_context)
       lib_reqs = controller_context[:shared_lib_requires]
       shared_reqs = controller_context[:shared_requires].fetch(ctrl[:bundle_name], Set.new).to_a.sort
@@ -73,7 +74,7 @@ module ReactManifest
 
       files = js_files_in(ctrl[:path])
       own_requires = files.map { |f| relative_require_path(f) }
-      all_requires = (dep_requires + lib_reqs + shared_reqs + ext_reqs + own_requires).uniq
+      all_requires = (always_include_reqs + dep_requires + lib_reqs + shared_reqs + ext_reqs + own_requires).uniq
 
       if all_requires.empty?
         lines << "// (no JSX files found in #{ctrl[:name]}/)"
@@ -149,9 +150,12 @@ module ReactManifest
         end
       end
 
+      always_include_requires = build_always_include_requires(bundle_files, dependencies)
+
       {
         bundle_files: bundle_files,
         dependencies: dependencies,
+        always_include_requires: always_include_requires,
         shared_lib_requires: shared_lib_requires,
         shared_requires: shared_requires,
         external_requires: external_requires
@@ -185,6 +189,32 @@ module ReactManifest
 
       walk.call(bundle_name)
       ordered
+    end
+
+    def build_always_include_requires(bundle_files, dependencies)
+      bundles = @config.always_include.map(&:to_s).reject(&:empty?).uniq
+      return Hash.new { |h, k| h[k] = [] } if bundles.empty?
+
+      requires_by_bundle = Hash.new { |h, k| h[k] = [] }
+
+      bundle_files.each_key do |bundle_name|
+        requires = Set.new
+
+        bundles.each do |always_bundle|
+          next if always_bundle == bundle_name
+
+          transitive = [always_bundle] + transitive_dependencies(always_bundle, dependencies)
+          transitive.each do |dep_bundle|
+            bundle_files.fetch(dep_bundle, []).each do |abs_path|
+              requires << relative_require_path(abs_path)
+            end
+          end
+        end
+
+        requires_by_bundle[bundle_name] = requires.to_a.sort
+      end
+
+      requires_by_bundle
     end
 
     # --------------------------------------------------------------- write
