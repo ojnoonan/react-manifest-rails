@@ -307,6 +307,23 @@ RSpec.describe ReactManifest::Scanner do
       result = scanner.scan(classifier.classify)
       expect(result.controller_usages["users"].any? { |f| f.include?("fancy_widget") }).to be true
     end
+
+    it "warns when an external root file references a controller-only ux/app symbol" do
+      ext_dir = Rails.root.join("app", "assets", "javascripts", "components", "navbar")
+      FileUtils.mkdir_p(ext_dir)
+      File.write(ext_dir.join("top_nav.js"),
+                 "const TopNav = () => <UsersIndex />;\n")
+
+      ReactManifest.configure do |c|
+        c.external_roots = [ext_dir.to_s]
+      end
+
+      result = scanner.scan(classifier.classify)
+
+      expect(result.external_violations).not_to be_empty
+      expect(result.warnings.any? { |w| w.include?("External file 'components/navbar/top_nav'") }).to be true
+      expect(result.warnings.any? { |w| w.include?("uses app-dir symbol 'UsersIndex'") }).to be true
+    end
   end
 
   describe "error handling" do

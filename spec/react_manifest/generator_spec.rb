@@ -289,6 +289,24 @@ RSpec.describe ReactManifest::Generator do
         expect(content).not_to include("ux/lib/fancy_widget")
         expect(shared).to include("ux/lib/fancy_widget")
       end
+
+      it "warns when an external_roots file references a controller-only ux/app symbol" do
+        ext_dir = Rails.root.join("app", "assets", "javascripts", "components", "navbar")
+        FileUtils.mkdir_p(ext_dir)
+        File.write(ext_dir.join("top_nav.js"),
+                   "const TopNav = () => <UsersIndex />;\n")
+
+        ReactManifest.configure do |c|
+          c.external_roots = [ext_dir.to_s]
+        end
+
+        allow(generator).to receive(:warn)
+        generator.run!
+
+        expect(generator).to have_received(:warn).with(
+          include("External file 'components/navbar/top_nav' references controller-only symbol 'UsersIndex'")
+        )
+      end
     end
   end
 end

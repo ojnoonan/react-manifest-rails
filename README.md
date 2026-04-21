@@ -235,6 +235,18 @@ If you see errors like `UserSignInForm is not defined` (often from `eval` inside
 
 Using `defer: true` can cause `react_component` inline scripts to run before your `ux_*.js` bundles are executed.
 
+### `Identifier '<Name>' has already been declared`
+
+This usually means the same component/function is being loaded from two separate bundles.
+
+Common cause: a file outside `ux/` (for example `app/assets/javascripts/components/navbar/*` loaded by `application.js`) references a symbol defined in `ux/app/<controller>/...`, while that controller bundle is also loaded via `react_bundle_tag`.
+
+Recommended fix:
+- Move globally reused symbols out of `ux/app/*` into a shared dir (`ux/components`, `ux/hooks`, `ux/lib`) so they are emitted once via `ux_shared.js`.
+- Keep controller-specific symbols in `ux/app/*` and avoid importing/using them from non-ux global assets.
+
+If you use `external_roots`, `react_manifest:analyze` and generation warnings will now flag this pattern explicitly.
+
 ## Compatibility
 
 - Ruby: 3.2+

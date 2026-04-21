@@ -132,6 +132,8 @@ module ReactManifest
             next
           end
 
+          warn_on_external_controller_references(file_path, symbol_to_bundle)
+
           extract_defined_symbols(file_path).each do |sym|
             external_symbol_to_require[sym] ||= req_path
           end
@@ -370,6 +372,17 @@ module ReactManifest
 
     def normalize_require_path(path)
       path.to_s.sub(/\.js\.jsx$/, "").sub(/\.jsx$/, "").sub(/\.js$/, "")
+    end
+
+    def warn_on_external_controller_references(file_path, symbol_to_bundle)
+      extract_used_component_symbols(file_path).each do |sym|
+        dep_bundle = symbol_to_bundle[sym]
+        next unless dep_bundle
+
+        warn "[ReactManifest] External file '#{relative_require_path(file_path)}' references " \
+             "controller-only symbol '#{sym}' (#{dep_bundle}). " \
+             "Move '#{sym}' to a shared ux dir to avoid duplicate runtime declarations."
+      end
     end
 
     def auto_generated?(path)

@@ -57,7 +57,8 @@ module ReactManifest
       Object Array String Number Boolean Symbol Map Set WeakMap
     ].freeze
 
-    Result = Struct.new(:symbol_index, :controller_usages, :warnings, :shared_violations, keyword_init: true)
+    Result = Struct.new(:symbol_index, :controller_usages, :warnings, :shared_violations,
+                        :external_violations, keyword_init: true)
 
     def initialize(config = ReactManifest.configuration)
       @config = config
@@ -67,6 +68,7 @@ module ReactManifest
     def scan(classification)
       warnings      = []
       symbol_index  = {}
+      external_file_paths = {} # file_path => relative_require_path for external_roots files
 
       # Phase 1a: index symbols from shared dirs
       shared_file_paths = {} # file_path => relative_require_path for all shared files
@@ -90,7 +92,8 @@ module ReactManifest
         abs_root = abs_external_root(root_path)
         js_files_in(abs_root).each do |file_path|
           relative = relative_require_path(file_path)
-          symbols  = extract_definitions(file_path)
+          external_file_paths[file_path] = relative
+          symbols = extract_definitions(file_path)
           symbols.each do |sym|
             symbol_index[sym] ||= relative
           end
@@ -119,6 +122,7 @@ module ReactManifest
 
       # Phase 1e: detect shared files that use app-dir (controller) symbols
       shared_violations = detect_shared_violations(shared_file_paths, controller_symbol_index, warnings)
+      external_violations = detect_external_root_violations(external_file_paths, controller_symbol_index, warnings)
 
       # Phase 2: scan controller dirs for usage
       controller_usages = {}
@@ -147,7 +151,8 @@ module ReactManifest
         symbol_index: symbol_index,
         controller_usages: controller_usages,
         warnings: warnings,
-        shared_violations: shared_violations
+        shared_violations: shared_violations,
+        external_violations: external_violations
       )
     end
     # rubocop:enable Metrics/MethodLength,Metrics/AbcSize,Metrics/PerceivedComplexity
@@ -223,6 +228,36 @@ module ReactManifest
             warnings << "Shared file '#{relative}' uses app-dir symbol '#{sym}' " \
                         "(from ux/app/#{info[:controller]}). " \
                         "Move '#{sym}' to a shared dir or the shared file will be incomplete."
+          end
+        end
+      end
+      violations
+    end
+
+    def detect_external_root_violations(external_file_paths, controller_symbol_index, warnings)
+      violations = []
+      external_file_paths.each do |file_path, relative|
+        content = begin
+          File.read(file_path, encoding: "utf-8")
+        rescue Errno::ENOENT, Errno::EACCES, Encoding::InvalidByteSequenceError
+          next
+        end
+
+        local_syms = Set.new
+        DEFINITION_PATTERNS.each { |p| content.scan(p) { |m| local_syms << m[0] } }
+
+        [PASCAL_TOKEN_PATTERN, HOOK_TOKEN_PATTERN].each do |pattern|
+          content.scan(pattern) do |match|
+            sym = match[0]
+            next if local_syms.include?(sym)
+            next unless controller_symbol_index.key?(sym)
+
+            info = controller_symbol_index[sym]
+            violations << { external_file: relative, symbol: sym,
+                            controller: info[:controller], app_file: info[:file] }
+            warnings << "External file '#{relative}' uses app-dir symbol '#{sym}' " \
+                        "(from ux/app/#{info[:controller]}). " \
+                        "Move '#{sym}' into a shared ux dir to avoid duplicate runtime declarations."
           end
         end
       end
