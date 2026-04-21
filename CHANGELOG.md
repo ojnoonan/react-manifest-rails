@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.25] - 2026-04-22
+
+### Changed
+- Updated `Gemfile.lock` to keep lockfile state aligned with the released codebase.
+
 ## [0.2.24] - 2026-04-22
 
 ### Fixed
