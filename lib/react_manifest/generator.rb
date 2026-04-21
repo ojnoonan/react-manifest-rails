@@ -43,11 +43,11 @@ module ReactManifest
     def run!
       classification = @classifier.classify
       scan_result = Scanner.new(@config).scan(classification)
-      controller_context = build_controller_context(classification.controller_dirs, classification.shared_dirs, scan_result)
+      controller_context = build_controller_context(classification.controller_dirs, classification.shared_dirs,
+                                                    scan_result)
 
       # Phase 1: build all content in memory — no I/O.
-      manifests = []
-      classification.controller_dirs.each { |ctrl| manifests << build_controller(ctrl, controller_context) }
+      manifests = classification.controller_dirs.map { |ctrl| build_controller(ctrl, controller_context) }
 
       migrate_legacy_manifests!
 
@@ -61,8 +61,6 @@ module ReactManifest
     private
 
     # ------------------------------------------------------------------ shared
-
-
 
     # --------------------------------------------------------------- controller
 
@@ -86,6 +84,7 @@ module ReactManifest
       { filename: "#{ctrl[:bundle_name]}.js", content: "#{lines.join("\n")}\n" }
     end
 
+    # rubocop:disable Metrics/AbcSize
     def build_controller_context(controller_dirs, shared_dirs, scan_result)
       bundle_files = {}
       symbol_to_bundle = {}
@@ -103,10 +102,8 @@ module ReactManifest
         end
         shared_requires[ctrl[:bundle_name]] = expand_shared_requires(shared_requires[ctrl[:bundle_name]],
                                                                      shared_dependency_map)
-      end
 
-      # Index controller-defined symbols for cross-app detection
-      controller_dirs.each do |ctrl|
+        # Index controller-defined symbols for cross-app detection
         bundle_name = ctrl[:bundle_name]
         files = js_files_in(ctrl[:path])
         bundle_files[bundle_name] = files
@@ -160,6 +157,7 @@ module ReactManifest
         external_requires: external_requires
       }
     end
+    # rubocop:enable Metrics/AbcSize
 
     def controller_dependency_requires(bundle_name, controller_context)
       deps = transitive_dependencies(bundle_name, controller_context[:dependencies])

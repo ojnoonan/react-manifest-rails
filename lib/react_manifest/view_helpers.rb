@@ -75,7 +75,7 @@ module ReactManifest
       if respond_to?(:request, true) && request
         request.env["react_manifest.emitted_bundles"] ||= []
       else
-        @_react_manifest_emitted_bundles ||= []
+        @emitted_bundles ||= []
       end
     end
 

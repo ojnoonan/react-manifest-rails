@@ -23,7 +23,7 @@ module ReactManifest
       /function\s+([A-Z][A-Za-z0-9_]*)\s*\(/,         # function FooBar(
       /class\s+([A-Z][A-Za-z0-9_]*)\s*(?:extends|\{)/, # class FooBar
       /(?:const|let|var)\s+(use[A-Z][A-Za-z0-9_]*)\s*=/, # const useFoo = (hooks)
-      /function\s+(use[A-Z][A-Za-z0-9_]*)\s*\(/,     # function useFoo(
+      /function\s+(use[A-Z][A-Za-z0-9_]*)\s*\(/, # function useFoo(
 
       # ES module style (export default / named exports)
       /^export\s+default\s+(?:function|class)\s+([A-Z][A-Za-z0-9_]*)/,
@@ -197,7 +197,7 @@ module ReactManifest
       return if basename.start_with?("#{ctrl_name}_") || basename == ctrl_name
 
       warnings.add("File '#{File.basename(file_path)}' in '#{ctrl_name}' does not follow " \
-                  "'#{ctrl_name}_<action>.js.jsx' naming convention")
+                   "'#{ctrl_name}_<action>.js.jsx' naming convention")
     end
 
     def detect_shared_violations(shared_file_paths, controller_symbol_index, warnings)
@@ -222,8 +222,8 @@ module ReactManifest
             violations << { shared_file: relative, symbol: sym,
                             controller: info[:controller], app_file: info[:file] }
             warnings.add("Shared file '#{relative}' uses app-dir symbol '#{sym}' " \
-                        "(from ux/app/#{info[:controller]}). " \
-                        "Move '#{sym}' to a shared dir or the shared file will be incomplete.")
+                         "(from ux/app/#{info[:controller]}). " \
+                         "Move '#{sym}' to a shared dir or the shared file will be incomplete.")
           end
         end
       end
@@ -252,8 +252,8 @@ module ReactManifest
             violations << { external_file: relative, symbol: sym,
                             controller: info[:controller], app_file: info[:file] }
             warnings.add("External file '#{relative}' uses app-dir symbol '#{sym}' " \
-                        "(from ux/app/#{info[:controller]}). " \
-                        "Move '#{sym}' into a shared ux dir to avoid duplicate runtime declarations.")
+                         "(from ux/app/#{info[:controller]}). " \
+                         "Move '#{sym}' into a shared ux dir to avoid duplicate runtime declarations.")
           end
         end
       end
@@ -268,9 +268,7 @@ module ReactManifest
       end
 
       fanout.each do |file, count|
-        if count > 3
-          warnings.add("High fan-out: '#{file}' is used by #{count} controllers")
-        end
+        warnings.add("High fan-out: '#{file}' is used by #{count} controllers") if count > 3
       end
     end
 
