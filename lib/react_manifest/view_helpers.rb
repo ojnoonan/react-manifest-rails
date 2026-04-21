@@ -23,7 +23,7 @@ module ReactManifest
 
       # Record emitted bundles so react_component doesn't re-emit them.
       emitted = (@_react_manifest_emitted_bundles ||= [])
-      bundles.each { |b| emitted << b unless emitted.include?(b) }
+      bundles.each { |b| emitted << b unless emitted_bundle?(emitted, b) }
 
       asset_names = bundles.map { |bundle| "#{bundle}.js" }
       javascript_include_tag(*asset_names, extname: false, **html_options)
@@ -43,7 +43,7 @@ module ReactManifest
       emitted = (@_react_manifest_emitted_bundles ||= [])
 
       new_tags = bundles.filter_map do |bundle|
-        next if emitted.include?(bundle)
+        next if emitted_bundle?(emitted, bundle)
 
         emitted << bundle
         javascript_include_tag("#{bundle}.js", extname: false)
@@ -52,6 +52,17 @@ module ReactManifest
       return html if new_tags.empty?
 
       safe_join(new_tags + [html])
+    end
+
+    private
+
+    def emitted_bundle?(emitted, bundle)
+      canonical = canonical_bundle_name(bundle)
+      emitted.any? { |existing| canonical_bundle_name(existing) == canonical }
+    end
+
+    def canonical_bundle_name(bundle)
+      bundle.to_s.split("/").last
     end
   end
 end

@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - `react_component` now emits only `ux_shared` plus the direct owning bundle for the requested component symbol, instead of also emitting transitive controller manifests as separate script tags. This prevents unnecessary network requests for additional `ux_*.js` manifests while preserving dependency loading through generated manifest `require` directives.
+- Generator now skips `external_roots` and `external_providers` entries that resolve to files already included in `ux_shared`, preventing duplicate runtime declarations from overlapping shared/external includes.
+- View helper bundle deduplication now canonicalizes bundle names (e.g. `ux_shared` vs `ux_manifests/ux_shared`) to avoid re-emitting equivalent script tags.
 
 ## [0.2.10] - 2026-04-16
 

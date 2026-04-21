@@ -84,7 +84,9 @@ In development:
 Generation is **directory-based** — deterministic and conservative by design.
 
 - `ux_shared.js`: every file from directories outside `ux/app/` (i.e. `components/`, `hooks/`, `lib/`, etc.)
-- `ux_<controller>.js`: `ux_shared` + every file under `ux/app/<controller>/`
+- `ux_<controller>.js`: every file under `ux/app/<controller>/`, plus transitive controller dependencies inferred from component usage across `ux/app/*`
+
+`ux_shared.js` is loaded as a separate script by `react_bundle_tag` and `react_component` helpers. It is intentionally not inlined into every `ux_<controller>.js` manifest to avoid duplicating shared code across controller bundles.
 
 Namespace fallback for nested controllers: `admin/reports/summary` tries `ux_admin_reports_summary`, then `ux_admin_reports`, then `ux_admin`, then `ux_summary`. The most specific match wins.
 
@@ -141,6 +143,7 @@ end
 - **`exclude_paths`**: excludes files whose path contains any listed segment. Not based on `application.js`.
 - **`dry_run`**: also honoured by `DRY_RUN=1` environment variable at runtime.
 - **`extensions`**: add `ts` and `tsx` to enable TypeScript source detection.
+- **`external_roots` / `external_providers`**: do not point these at files already inside shared `ux/` dirs (`components/`, `hooks/`, `lib/`, etc.). The generator now skips those overlaps to prevent duplicate declarations in browser runtime.
 
 ## Commands
 

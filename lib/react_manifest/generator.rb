@@ -42,7 +42,7 @@ module ReactManifest
     # written and others stale/missing.
     def run!
       classification = @classifier.classify
-      controller_context = build_controller_context(classification.controller_dirs)
+      controller_context = build_controller_context(classification.controller_dirs, classification.shared_dirs)
 
       # Phase 1: build all content in memory — no I/O.
       manifests = []
@@ -99,12 +99,13 @@ module ReactManifest
       { filename: "#{ctrl[:bundle_name]}.js", content: "#{lines.join("\n")}\n" }
     end
 
-    def build_controller_context(controller_dirs)
+    def build_controller_context(controller_dirs, shared_dirs)
       bundle_files = {}
       symbol_to_bundle = {}
       external_symbol_to_require = {}
       dependencies = Hash.new { |h, k| h[k] = Set.new }
       external_requires = Hash.new { |h, k| h[k] = Set.new }
+      shared_require_paths = shared_require_path_set(shared_dirs)
 
       # Index controller-defined symbols for cross-app detection
       controller_dirs.each do |ctrl|
@@ -126,6 +127,11 @@ module ReactManifest
         abs_root = abs_external_root(root_path)
         external_js_files_in(abs_root).each do |file_path|
           req_path = relative_require_path(file_path)
+          if shared_require_paths.include?(normalize_require_path(req_path))
+            warn "[ReactManifest] Skipping external_roots file already provided by shared bundle: #{req_path}"
+            next
+          end
+
           extract_defined_symbols(file_path).each do |sym|
             external_symbol_to_require[sym] ||= req_path
           end
@@ -134,6 +140,12 @@ module ReactManifest
 
       # Explicit external_providers win over scanned roots on symbol conflicts
       @config.external_providers.each do |sym, req_path|
+        if shared_require_paths.include?(normalize_require_path(req_path))
+          warn "[ReactManifest] Skipping external provider '#{sym}' because it is already " \
+               "provided by shared bundle: #{req_path}"
+          next
+        end
+
         external_symbol_to_require[sym] = req_path
       end
 
@@ -346,6 +358,18 @@ module ReactManifest
       return path if Pathname.new(path).absolute?
 
       Rails.root.join(path).to_s
+    end
+
+    def shared_require_path_set(shared_dirs)
+      shared_dirs.each_with_object(Set.new) do |shared_dir, paths|
+        js_files_in(shared_dir[:path]).each do |file_path|
+          paths << normalize_require_path(relative_require_path(file_path))
+        end
+      end
+    end
+
+    def normalize_require_path(path)
+      path.to_s.sub(/\.js\.jsx$/, "").sub(/\.jsx$/, "").sub(/\.js$/, "")
     end
 
     def auto_generated?(path)

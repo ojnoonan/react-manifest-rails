@@ -222,6 +222,27 @@ RSpec.describe ReactManifest::Generator do
 
         expect(content).to include("mini-search")
       end
+
+      it "skips external providers that point at files already in shared dirs" do
+        shared_file = Rails.root.join("app/assets/javascripts/ux/lib/fancy_widget.js")
+        File.write(shared_file, "const FancyWidget = () => <div />;\n")
+
+        ReactManifest.configure do |c|
+          c.external_providers = { "FancyWidget" => "ux/lib/fancy_widget" }
+        end
+
+        ctrl_dir = Rails.root.join("app/assets/javascripts/ux/app/users")
+        FileUtils.mkdir_p(ctrl_dir)
+        File.write(ctrl_dir.join("users_index.js.jsx"),
+                   "const Page = () => <FancyWidget />;\n")
+
+        generator.run!
+        content = read_manifest("ux_users.js")
+        shared = read_manifest("ux_shared.js")
+
+        expect(content).not_to include("ux/lib/fancy_widget")
+        expect(shared).to include("ux/lib/fancy_widget")
+      end
     end
 
     describe "external_roots integration" do
@@ -244,6 +265,29 @@ RSpec.describe ReactManifest::Generator do
         content = read_manifest("ux_users.js")
 
         expect(content).to include("fancy_widget")
+      end
+
+      it "skips external_roots files that are already in shared dirs" do
+        shared_lib = Rails.root.join("app/assets/javascripts/ux/lib")
+        FileUtils.mkdir_p(shared_lib)
+        File.write(shared_lib.join("fancy_widget.js"),
+                   "const FancyWidget = () => <div />;\n")
+
+        ReactManifest.configure do |c|
+          c.external_roots = [shared_lib.to_s]
+        end
+
+        ctrl_dir = Rails.root.join("app/assets/javascripts/ux/app/users")
+        FileUtils.mkdir_p(ctrl_dir)
+        File.write(ctrl_dir.join("users_index.js.jsx"),
+                   "const Page = () => <FancyWidget />;\n")
+
+        generator.run!
+        content = read_manifest("ux_users.js")
+        shared = read_manifest("ux_shared.js")
+
+        expect(content).not_to include("ux/lib/fancy_widget")
+        expect(shared).to include("ux/lib/fancy_widget")
       end
     end
   end

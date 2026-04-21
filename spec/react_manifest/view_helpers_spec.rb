@@ -323,6 +323,16 @@ RSpec.describe ReactManifest::ViewHelpers do
     expect(second).not_to include("ux_users.js")
   end
 
+  it "does not re-emit shared bundle when legacy bundle name was already emitted" do
+    view = host_class.new
+    view.instance_variable_set(:@_react_manifest_emitted_bundles, ["ux_shared"])
+
+    html = view.react_component("UsersIndex")
+
+    expect(html).to include("ux_users.js")
+    expect(html).not_to include("ux_shared.js")
+  end
+
   it "injects only direct bundle for cross-controller component usage" do
     dep_dir = Rails.root.join("app/assets/javascripts/ux/app/user_session")
     app_dir = Rails.root.join("app/assets/javascripts/ux/app/account")
