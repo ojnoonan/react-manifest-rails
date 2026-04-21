@@ -7,16 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.2.25] - 2026-04-22
-
-### Changed
-- Updated `Gemfile.lock` to keep lockfile state aligned with the released codebase.
-
 ## [0.2.24] - 2026-04-22
 
 ### Fixed
 - Controller manifests now inline files from bundles listed in `always_include` (for example `ux_main`), so runtime symbol availability no longer depends on cross-bundle script execution order in production.
 - Scanner analysis no longer emits warnings for ux/app file naming convention mismatches, reducing noise for apps that intentionally use custom filename patterns.
+
+### Changed
+- Updated `Gemfile.lock` to keep lockfile state aligned with the released codebase.
 
 ## [0.2.23] - 2026-04-21
 
