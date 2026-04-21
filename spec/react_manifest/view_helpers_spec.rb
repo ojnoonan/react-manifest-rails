@@ -242,6 +242,38 @@ RSpec.describe ReactManifest do
         .to eq(%w[ux_manifests/ux_design_variables ux_manifests/ux_main])
     end
   end
+
+  describe ".resolve_bundles_for_component_direct" do
+    around(:each) do |example|
+      with_temp_rails_root do |tmpdir|
+        copy_fixtures_to(tmpdir)
+        fixture_config(tmpdir)
+        example.run
+      end
+    end
+
+    it "returns shared and direct bundle for known components" do
+      ReactManifest::Generator.new(ReactManifest.configuration).run!
+
+      expect(described_class.resolve_bundles_for_component_direct("UsersIndex"))
+        .to eq(%w[ux_manifests/ux_shared ux_manifests/ux_users])
+    end
+
+    it "does not include transitive dependency bundles as separate scripts" do
+      dep_dir = Rails.root.join("app/assets/javascripts/ux/app/user_session")
+      app_dir = Rails.root.join("app/assets/javascripts/ux/app/account")
+      FileUtils.mkdir_p(dep_dir)
+      FileUtils.mkdir_p(app_dir)
+
+      File.write(dep_dir.join("user_sign_in_form.js.jsx"), "const UserSignInForm = () => <div />;\n")
+      File.write(app_dir.join("account_show.js.jsx"), "const AccountShow = () => <UserSignInForm />;\n")
+
+      ReactManifest::Generator.new(ReactManifest.configuration).run!
+
+      expect(described_class.resolve_bundles_for_component_direct("AccountShow"))
+        .to eq(%w[ux_manifests/ux_shared ux_manifests/ux_account])
+    end
+  end
 end
 
 RSpec.describe ReactManifest::ViewHelpers do
@@ -291,7 +323,7 @@ RSpec.describe ReactManifest::ViewHelpers do
     expect(second).not_to include("ux_users.js")
   end
 
-  it "injects dependency bundles for cross-controller component usage" do
+  it "injects only direct bundle for cross-controller component usage" do
     dep_dir = Rails.root.join("app/assets/javascripts/ux/app/user_session")
     app_dir = Rails.root.join("app/assets/javascripts/ux/app/account")
     FileUtils.mkdir_p(dep_dir)
@@ -303,11 +335,12 @@ RSpec.describe ReactManifest::ViewHelpers do
     ReactManifest::Generator.new(ReactManifest.configuration).run!
 
     html = host_class.new.react_component("AccountShow")
-    expect(html).to include("ux_user_session.js")
+    expect(html).to include("ux_shared.js")
     expect(html).to include("ux_account.js")
+    expect(html).not_to include("ux_user_session.js")
   end
 
-  it "injects design-variables bundle when MainIndex uses DesignVariableShow" do
+  it "injects only direct bundle when MainIndex uses DesignVariableShow" do
     dep_dir = Rails.root.join("app/assets/javascripts/ux/app/design_variables")
     app_dir = Rails.root.join("app/assets/javascripts/ux/app/main")
     FileUtils.mkdir_p(dep_dir)
@@ -319,11 +352,12 @@ RSpec.describe ReactManifest::ViewHelpers do
     ReactManifest::Generator.new(ReactManifest.configuration).run!
 
     html = host_class.new.react_component("MainIndex")
-    expect(html).to include("ux_design_variables.js")
+    expect(html).to include("ux_shared.js")
     expect(html).to include("ux_main.js")
+    expect(html).not_to include("ux_design_variables.js")
   end
 
-  it "injects dependency bundle when component is passed as JSX prop" do
+  it "injects only direct bundle when component is passed as JSX prop" do
     dep_dir = Rails.root.join("app/assets/javascripts/ux/app/design_variables")
     app_dir = Rails.root.join("app/assets/javascripts/ux/app/main")
     FileUtils.mkdir_p(dep_dir)
@@ -336,11 +370,12 @@ RSpec.describe ReactManifest::ViewHelpers do
     ReactManifest::Generator.new(ReactManifest.configuration).run!
 
     html = host_class.new.react_component("MainIndex")
-    expect(html).to include("ux_design_variables.js")
+    expect(html).to include("ux_shared.js")
     expect(html).to include("ux_main.js")
+    expect(html).not_to include("ux_design_variables.js")
   end
 
-  it "injects dependency bundle when component is passed as object value" do
+  it "injects only direct bundle when component is passed as object value" do
     dep_dir = Rails.root.join("app/assets/javascripts/ux/app/design_variables")
     app_dir = Rails.root.join("app/assets/javascripts/ux/app/main")
     FileUtils.mkdir_p(dep_dir)
@@ -353,11 +388,12 @@ RSpec.describe ReactManifest::ViewHelpers do
     ReactManifest::Generator.new(ReactManifest.configuration).run!
 
     html = host_class.new.react_component("MainIndex")
-    expect(html).to include("ux_design_variables.js")
+    expect(html).to include("ux_shared.js")
     expect(html).to include("ux_main.js")
+    expect(html).not_to include("ux_design_variables.js")
   end
 
-  it "injects dependency bundle when components are passed in arrays" do
+  it "injects only direct bundle when components are passed in arrays" do
     dep_dir = Rails.root.join("app/assets/javascripts/ux/app/design_variables")
     app_dir = Rails.root.join("app/assets/javascripts/ux/app/main")
     FileUtils.mkdir_p(dep_dir)
@@ -370,11 +406,12 @@ RSpec.describe ReactManifest::ViewHelpers do
     ReactManifest::Generator.new(ReactManifest.configuration).run!
 
     html = host_class.new.react_component("MainIndex")
-    expect(html).to include("ux_design_variables.js")
+    expect(html).to include("ux_shared.js")
     expect(html).to include("ux_main.js")
+    expect(html).not_to include("ux_design_variables.js")
   end
 
-  it "injects dependency bundle when array components are on separate lines" do
+  it "injects only direct bundle when array components are on separate lines" do
     dep_dir = Rails.root.join("app/assets/javascripts/ux/app/design_variables")
     app_dir = Rails.root.join("app/assets/javascripts/ux/app/main")
     FileUtils.mkdir_p(dep_dir)
@@ -391,8 +428,9 @@ RSpec.describe ReactManifest::ViewHelpers do
     ReactManifest::Generator.new(ReactManifest.configuration).run!
 
     html = host_class.new.react_component("MainIndex")
-    expect(html).to include("ux_design_variables.js")
+    expect(html).to include("ux_shared.js")
     expect(html).to include("ux_main.js")
+    expect(html).not_to include("ux_design_variables.js")
   end
 
   describe "react_bundle_tag + react_component deduplication" do

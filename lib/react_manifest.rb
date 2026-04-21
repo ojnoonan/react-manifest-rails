@@ -15,6 +15,7 @@ require "react_manifest/watcher"
 require "react_manifest/reporter"
 require "react_manifest/view_helpers"
 
+# rubocop:disable Metrics/ModuleLength
 module ReactManifest
   class << self
     def configuration
@@ -65,7 +66,32 @@ module ReactManifest
     # where the requested component name is known and may not align 1:1 with
     # controller_path-derived bundle names.
     def resolve_bundle_for_component(component_name)
-      resolve_bundles_for_component(component_name).last
+      resolve_bundles_for_component_direct(component_name).last
+    end
+
+    # Resolve the direct bundle list needed for a React component symbol.
+    # Returns shared first (if present), then the component's owning bundle.
+    #
+    # Unlike resolve_bundles_for_component, this does not include transitive
+    # controller dependencies because generated controller manifests already
+    # inline those files via Sprockets require directives.
+    def resolve_bundles_for_component_direct(component_name)
+      name = component_name.to_s
+      return [] if name.empty?
+
+      config = configuration
+      maps = component_maps(config)
+      root_bundle = maps[:symbol_to_bundle][name]
+      return [] unless root_bundle
+
+      bundles = []
+      shared = resolve_bundle_reference(config, config.shared_bundle)
+      bundles << shared if shared
+
+      root = resolve_bundle_reference(config, root_bundle)
+      bundles << root if root && !bundles.include?(root)
+
+      bundles
     end
 
     # Resolve all controller bundles needed for a React component symbol.
@@ -220,3 +246,4 @@ module ReactManifest
     end
   end
 end
+# rubocop:enable Metrics/ModuleLength

@@ -1,0 +1,26 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Start Dummy App 3101",
+			"type": "shell",
+			"command": "cd test/dummy && bundle exec rails s -p 3101",
+			"isBackground": true,
+			"group": "build"
+		},
+		{
+			"label": "Start Dummy App 3101 rbenv",
+			"type": "shell",
+			"command": "cd test/dummy && ~/.rbenv/shims/bundle exec rails s -p 3101",
+			"isBackground": true,
+			"group": "build"
+		},
+		{
+			"label": "Restart Dummy App 3101 rbenv",
+			"type": "shell",
+			"command": "cd test/dummy && rm -f tmp/pids/server.pid && ~/.rbenv/shims/bundle exec rails s -p 3101",
+			"isBackground": true,
+			"group": "build"
+		}
+	]
+}

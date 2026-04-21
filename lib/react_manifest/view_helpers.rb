@@ -37,7 +37,7 @@ module ReactManifest
       html = super
 
       component_name = args.first
-      bundles = ReactManifest.resolve_bundles_for_component(component_name)
+      bundles = ReactManifest.resolve_bundles_for_component_direct(component_name)
       return html if bundles.empty?
 
       emitted = (@_react_manifest_emitted_bundles ||= [])

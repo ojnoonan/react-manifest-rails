@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- `react_component` now emits only `ux_shared` plus the direct owning bundle for the requested component symbol, instead of also emitting transitive controller manifests as separate script tags. This prevents unnecessary network requests for additional `ux_*.js` manifests while preserving dependency loading through generated manifest `require` directives.
+
 ## [0.2.10] - 2026-04-16
 
 ### Fixed
