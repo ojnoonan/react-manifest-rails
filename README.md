@@ -168,6 +168,22 @@ bundle exec rails react_manifest:watch
 bundle exec rails react_manifest:clean
 ```
 
+## Releasing
+
+The publish workflow runs on tag pushes (`v*`), not on branch pushes.
+
+1. Bump `ReactManifest::VERSION` in `lib/react_manifest/version.rb`.
+2. Run `bundle install` to refresh the local path spec version in `Gemfile.lock`.
+3. Commit and push to `main`/`master`.
+4. Create and push a matching annotated tag:
+
+```bash
+git tag -a vX.Y.Z -m "Release vX.Y.Z"
+git push origin vX.Y.Z
+```
+
+This tag push triggers `.github/workflows/release.yml`, which runs tests, creates a GitHub Release, and publishes to RubyGems.
+
 ## Troubleshooting
 
 ### `AssetNotPrecompiledError` for `ux_*.js`
