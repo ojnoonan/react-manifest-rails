@@ -5,11 +5,10 @@ module ReactManifest
   #   <%= react_bundle_tag %>
   #
   # Resolves which ux_*.js bundles to include based on controller_path:
-  #   1. Always includes config.shared_bundle (e.g. "ux_shared")
-  #   2. Always appends config.always_include (e.g. ["ux_main"])
-  #   3. Appends "ux_<controller_path>" if that bundle file exists
-  #   4. For namespaced controllers (admin/users): checks ux_admin_users, then ux_admin
-  #   5. Returns "" for pure ERB/HAML pages with no matching bundle, or when
+  #   1. Appends config.always_include (e.g. ["ux_main"])
+  #   2. Appends "ux_<controller_path>" if that bundle file exists
+  #   3. For namespaced controllers (admin/users): checks ux_admin_users, then ux_admin
+  #   4. Returns "" for pure ERB/HAML pages with no matching bundle, or when
   #      called outside a controller context (mailers, engines, etc.)
   module ViewHelpers
     def react_bundle_tag(**html_options)
@@ -22,10 +21,14 @@ module ReactManifest
       return "".html_safe if bundles.empty?
 
       # Record emitted bundles so react_component doesn't re-emit them.
-      emitted = (@_react_manifest_emitted_bundles ||= [])
-      bundles.each { |b| emitted << b unless emitted_bundle?(emitted, b) }
+      emitted = emitted_bundles
+      fresh_bundles = bundles.reject { |b| emitted_bundle?(emitted, b) }
+      return "".html_safe if fresh_bundles.empty?
 
-      asset_names = bundles.map { |bundle| "#{bundle}.js" }
+      fresh_bundles.each { |b| emitted << b }
+      mark_bundle_tag_rendered
+
+      asset_names = fresh_bundles.map { |bundle| "#{bundle}.js" }
       javascript_include_tag(*asset_names, extname: false, **html_options)
     end
 
@@ -35,12 +38,13 @@ module ReactManifest
     # This avoids strict dependence on controller_path -> bundle naming alignment.
     def react_component(*args, **kwargs, &block)
       html = super
+      return html if bundle_tag_rendered?
 
       component_name = args.first
       bundles = ReactManifest.resolve_bundles_for_component_direct(component_name)
       return html if bundles.empty?
 
-      emitted = (@_react_manifest_emitted_bundles ||= [])
+      emitted = emitted_bundles
 
       new_tags = bundles.filter_map do |bundle|
         next if emitted_bundle?(emitted, bundle)
@@ -63,6 +67,28 @@ module ReactManifest
 
     def canonical_bundle_name(bundle)
       bundle.to_s.split("/").last
+    end
+
+    def emitted_bundles
+      # ActionView can instantiate multiple helper contexts during one request.
+      # Store emitted bundles in request env so layout + template helpers dedupe.
+      if respond_to?(:request, true) && request
+        request.env["react_manifest.emitted_bundles"] ||= []
+      else
+        @_react_manifest_emitted_bundles ||= []
+      end
+    end
+
+    def mark_bundle_tag_rendered
+      return unless respond_to?(:request, true) && request
+
+      request.env["react_manifest.bundle_tag_rendered"] = true
+    end
+
+    def bundle_tag_rendered?
+      return false unless respond_to?(:request, true) && request
+
+      request.env["react_manifest.bundle_tag_rendered"] == true
     end
   end
 end

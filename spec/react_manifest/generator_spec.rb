@@ -24,10 +24,6 @@ RSpec.describe ReactManifest::Generator do
   describe "#run!" do
     before { generator.run! }
 
-    it "generates ux_shared.js" do
-      expect(File.exist?(File.join(output_dir, "ux_shared.js"))).to be true
-    end
-
     it "generates ux_notifications.js" do
       expect(File.exist?(File.join(output_dir, "ux_notifications.js"))).to be true
     end
@@ -38,42 +34,6 @@ RSpec.describe ReactManifest::Generator do
 
     it "generates ux_main.js" do
       expect(File.exist?(File.join(output_dir, "ux_main.js"))).to be true
-    end
-
-    describe "ux_shared.js content" do
-      subject(:content) { read_manifest("ux_shared.js") }
-
-      it "has the AUTO-GENERATED header" do
-        expect(content).to include("AUTO-GENERATED")
-      end
-
-      it "requires component files" do
-        expect(content).to include("ux/components/buttons/icon_button")
-        expect(content).to include("ux/components/buttons/primary_button")
-        expect(content).to include("ux/components/form/text_input")
-      end
-
-      it "requires hook files" do
-        expect(content).to include("ux/hooks/use_fetch")
-        expect(content).to include("ux/hooks/use_modal")
-      end
-
-      it "requires lib files" do
-        expect(content).to include("ux/lib/api_helpers")
-        expect(content).to include("ux/lib/format_date")
-      end
-
-      it "buttons/ appears before hooks/ (alphabetical order)" do
-        btn_pos  = content.index("components/buttons")
-        hook_pos = content.index("hooks/")
-        expect(btn_pos).to be < hook_pos
-      end
-
-      it "icon_button appears before primary_button (alphabetical within dir)" do
-        icon_pos    = content.index("icon_button")
-        primary_pos = content.index("primary_button")
-        expect(icon_pos).to be < primary_pos
-      end
     end
 
     describe "ux_notifications.js content" do
@@ -117,10 +77,10 @@ RSpec.describe ReactManifest::Generator do
 
     describe "idempotency" do
       it "does not change file if content is unchanged" do
-        mtime_before = File.mtime(File.join(output_dir, "ux_shared.js"))
+        mtime_before = File.mtime(File.join(output_dir, "ux_notifications.js"))
         sleep 0.01
         results = generator.run!
-        mtime_after = File.mtime(File.join(output_dir, "ux_shared.js"))
+        mtime_after = File.mtime(File.join(output_dir, "ux_notifications.js"))
 
         unchanged = results.select { |r| r[:status] == :unchanged }
         expect(unchanged).not_to be_empty
@@ -131,18 +91,18 @@ RSpec.describe ReactManifest::Generator do
     describe "dry_run mode" do
       it "does not write any files" do
         ReactManifest.configure { |c| c.dry_run = true }
-        FileUtils.rm_f(File.join(output_dir, "ux_shared.js"))
+        FileUtils.rm_f(File.join(output_dir, "ux_notifications.js"))
 
         expect do
           described_class.new(config).run!
-        end.not_to(change { Dir.glob(File.join(output_dir, "ux_shared.js")).any? })
+        end.not_to(change { Dir.glob(File.join(output_dir, "ux_notifications.js")).any? })
       end
     end
 
     describe "pinned file protection" do
       it "does not overwrite a file without AUTO-GENERATED header" do
-        # Write a hand-curated ux_shared.js without the header
-        pinned_path = File.join(output_dir, "ux_shared.js")
+        # Write a hand-curated ux_notifications.js without the header
+        pinned_path = File.join(output_dir, "ux_notifications.js")
         File.write(pinned_path, "// HAND CURATED\n//= require something_special\n")
 
         results = described_class.new(config).run!
@@ -176,7 +136,7 @@ RSpec.describe ReactManifest::Generator do
       end
 
       it "cleans up the temp file when an atomic write fails" do
-        dest = File.join(output_dir, "ux_shared.js")
+        dest = File.join(output_dir, "ux_notifications.js")
         # Remove the manifest so write_manifest actually attempts a rename
         FileUtils.rm(dest)
 
@@ -238,10 +198,8 @@ RSpec.describe ReactManifest::Generator do
 
         generator.run!
         content = read_manifest("ux_users.js")
-        shared = read_manifest("ux_shared.js")
 
-        expect(content).not_to include("ux/lib/fancy_widget")
-        expect(shared).to include("ux/lib/fancy_widget")
+        expect(content).to include("ux/lib/fancy_widget")
       end
     end
 
@@ -284,10 +242,8 @@ RSpec.describe ReactManifest::Generator do
 
         generator.run!
         content = read_manifest("ux_users.js")
-        shared = read_manifest("ux_shared.js")
 
-        expect(content).not_to include("ux/lib/fancy_widget")
-        expect(shared).to include("ux/lib/fancy_widget")
+        expect(content).to include("ux/lib/fancy_widget")
       end
 
       it "warns when an external_roots file references a controller-only ux/app symbol" do

@@ -25,21 +25,15 @@ RSpec.describe ReactManifest::Scanner do
       expect(result.symbol_index.keys).to include("useFetch", "useModal")
     end
 
-    it "indexes lowercase lib functions" do
-      expect(result.symbol_index.keys).to include("formatDate", "apiPost", "apiGet")
-    end
-
     it "maps each symbol to its correct relative require path" do
       expect(result.symbol_index["PrimaryButton"]).to match(%r{ux/components/buttons/primary_button(\.js\.jsx)?\z})
       expect(result.symbol_index["useFetch"]).to match(%r{ux/hooks/use_fetch(\.js\.jsx)?\z})
-      expect(result.symbol_index["formatDate"]).to match(%r{ux/lib/format_date(\.js\.jsx)?\z})
     end
 
     it "indexes ES module exports from shared files" do
-      expect(result.symbol_index.keys).to include("StatusBadge", "usePrefetch", "pluralizeWords")
+      expect(result.symbol_index.keys).to include("StatusBadge", "usePrefetch")
       expect(result.symbol_index["StatusBadge"]).to end_with("ux/components/indicators/status_badge")
       expect(result.symbol_index["usePrefetch"]).to end_with("ux/hooks/use_prefetch")
-      expect(result.symbol_index["pluralizeWords"]).to end_with("ux/lib/pluralize_words")
     end
 
     it "warns when duplicate shared symbols are defined" do
@@ -68,10 +62,6 @@ RSpec.describe ReactManifest::Scanner do
       it "detects useModal hook" do
         expect(notif_usage.any? { |f| f.include?("use_modal") }).to be true
       end
-
-      it "detects formatDate lib call" do
-        expect(notif_usage.any? { |f| f.include?("format_date") }).to be true
-      end
     end
 
     context "users controller" do
@@ -95,10 +85,6 @@ RSpec.describe ReactManifest::Scanner do
 
       it "detects ES module hook usage" do
         expect(products_usage.any? { |f| f.include?("use_prefetch") }).to be true
-      end
-
-      it "detects ES module lib function usage" do
-        expect(products_usage.any? { |f| f.include?("pluralize_words") }).to be true
       end
     end
 

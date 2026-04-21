@@ -42,11 +42,11 @@ module ReactManifest
     # written and others stale/missing.
     def run!
       classification = @classifier.classify
-      controller_context = build_controller_context(classification.controller_dirs, classification.shared_dirs)
+      scan_result = Scanner.new(@config).scan(classification)
+      controller_context = build_controller_context(classification.controller_dirs, classification.shared_dirs, scan_result)
 
       # Phase 1: build all content in memory — no I/O.
       manifests = []
-      manifests << build_shared(classification.shared_dirs)
       classification.controller_dirs.each { |ctrl| manifests << build_controller(ctrl, controller_context) }
 
       migrate_legacy_manifests!
@@ -62,33 +62,20 @@ module ReactManifest
 
     # ------------------------------------------------------------------ shared
 
-    def build_shared(shared_dirs)
-      lines     = header_lines
-      any_files = false
 
-      shared_dirs.each do |shared_dir|
-        files = js_files_in(shared_dir[:path])
-        next if files.empty?
-
-        any_files = true
-        files.each { |f| lines << "//= require #{relative_require_path(f)}" }
-      end
-
-      lines << "// (no shared files found)" unless any_files
-
-      { filename: "#{@config.shared_bundle}.js", content: "#{lines.join("\n")}\n" }
-    end
 
     # --------------------------------------------------------------- controller
 
     def build_controller(ctrl, controller_context)
       lines = header_lines
       dep_requires = controller_dependency_requires(ctrl[:bundle_name], controller_context)
+      lib_reqs = controller_context[:shared_lib_requires]
+      shared_reqs = controller_context[:shared_requires].fetch(ctrl[:bundle_name], Set.new).to_a.sort
       ext_reqs = controller_context[:external_requires].fetch(ctrl[:bundle_name], Set.new).to_a.sort
 
       files = js_files_in(ctrl[:path])
       own_requires = files.map { |f| relative_require_path(f) }
-      all_requires = (dep_requires + ext_reqs + own_requires).uniq
+      all_requires = (dep_requires + lib_reqs + shared_reqs + ext_reqs + own_requires).uniq
 
       if all_requires.empty?
         lines << "// (no JSX files found in #{ctrl[:name]}/)"
@@ -99,13 +86,24 @@ module ReactManifest
       { filename: "#{ctrl[:bundle_name]}.js", content: "#{lines.join("\n")}\n" }
     end
 
-    def build_controller_context(controller_dirs, shared_dirs)
+    def build_controller_context(controller_dirs, shared_dirs, scan_result)
       bundle_files = {}
       symbol_to_bundle = {}
       external_symbol_to_require = {}
       dependencies = Hash.new { |h, k| h[k] = Set.new }
       external_requires = Hash.new { |h, k| h[k] = Set.new }
       shared_require_paths = shared_require_path_set(shared_dirs)
+      shared_requires = Hash.new { |h, k| h[k] = Set.new }
+      shared_dependency_map = build_shared_dependency_map(shared_dirs, shared_require_paths, scan_result)
+      shared_lib_requires = shared_lib_require_paths(shared_dirs)
+
+      controller_dirs.each do |ctrl|
+        scan_result.controller_usages.fetch(ctrl[:name], []).each do |req_path|
+          shared_requires[ctrl[:bundle_name]] << req_path
+        end
+        shared_requires[ctrl[:bundle_name]] = expand_shared_requires(shared_requires[ctrl[:bundle_name]],
+                                                                     shared_dependency_map)
+      end
 
       # Index controller-defined symbols for cross-app detection
       controller_dirs.each do |ctrl|
@@ -127,10 +125,6 @@ module ReactManifest
         abs_root = abs_external_root(root_path)
         external_js_files_in(abs_root).each do |file_path|
           req_path = relative_require_path(file_path)
-          if shared_require_paths.include?(normalize_require_path(req_path))
-            warn "[ReactManifest] Skipping external_roots file already provided by shared bundle: #{req_path}"
-            next
-          end
 
           warn_on_external_controller_references(file_path, symbol_to_bundle)
 
@@ -142,12 +136,6 @@ module ReactManifest
 
       # Explicit external_providers win over scanned roots on symbol conflicts
       @config.external_providers.each do |sym, req_path|
-        if shared_require_paths.include?(normalize_require_path(req_path))
-          warn "[ReactManifest] Skipping external provider '#{sym}' because it is already " \
-               "provided by shared bundle: #{req_path}"
-          next
-        end
-
         external_symbol_to_require[sym] = req_path
       end
 
@@ -167,6 +155,8 @@ module ReactManifest
       {
         bundle_files: bundle_files,
         dependencies: dependencies,
+        shared_lib_requires: shared_lib_requires,
+        shared_requires: shared_requires,
         external_requires: external_requires
       }
     end
@@ -368,6 +358,58 @@ module ReactManifest
           paths << normalize_require_path(relative_require_path(file_path))
         end
       end
+    end
+
+    def shared_lib_require_paths(shared_dirs)
+      shared_dirs.each_with_object([]) do |shared_dir, paths|
+        next unless File.basename(shared_dir[:path]) == "lib"
+
+        js_files_in(shared_dir[:path]).each do |file_path|
+          paths << normalize_require_path(relative_require_path(file_path))
+        end
+      end.sort.uniq
+    end
+
+    def build_shared_dependency_map(shared_dirs, shared_require_paths, scan_result)
+      dependency_map = Hash.new { |h, k| h[k] = Set.new }
+
+      shared_symbol_index = scan_result.symbol_index.each_with_object({}) do |(sym, req_path), index|
+        normalized = normalize_require_path(req_path)
+        next unless shared_require_paths.include?(normalized)
+
+        index[sym] = normalized
+      end
+
+      shared_dirs.each do |shared_dir|
+        js_files_in(shared_dir[:path]).each do |file_path|
+          from_req = normalize_require_path(relative_require_path(file_path))
+          extract_used_component_symbols(file_path).each do |sym|
+            to_req = shared_symbol_index[sym]
+            next if to_req.nil? || to_req == from_req
+
+            dependency_map[from_req] << to_req
+          end
+        end
+      end
+
+      dependency_map
+    end
+
+    def expand_shared_requires(initial_requires, dependency_map)
+      expanded = Set.new(initial_requires)
+      queue = initial_requires.to_a
+
+      until queue.empty?
+        req = queue.shift
+        dependency_map.fetch(req, Set.new).each do |dep_req|
+          next if expanded.include?(dep_req)
+
+          expanded << dep_req
+          queue << dep_req
+        end
+      end
+
+      expanded
     end
 
     def normalize_require_path(path)

@@ -9,7 +9,6 @@ module ReactManifest
   # Phase 1 — builds a symbol index from shared dirs:
   #   "PrimaryButton" => "ux/components/buttons/primary_button"
   #   "useFetch"      => "ux/hooks/use_fetch"
-  #   "formatDate"    => "ux/lib/format_date"
   #
   # Phase 2 — scans controller files for usage of those symbols
   #   and produces per-controller lists of referenced shared files.
@@ -21,22 +20,19 @@ module ReactManifest
     DEFINITION_PATTERNS = [
       # CommonJS / variable-assignment style
       /(?:const|let|var)\s+([A-Z][A-Za-z0-9_]*)\s*=/, # const FooBar =
-      /function\s+([A-Z][A-Za-z0-9_]*)\s*\(/,                                       # function FooBar(
-      /class\s+([A-Z][A-Za-z0-9_]*)\s*(?:extends|\{)/,                              # class FooBar
+      /function\s+([A-Z][A-Za-z0-9_]*)\s*\(/,         # function FooBar(
+      /class\s+([A-Z][A-Za-z0-9_]*)\s*(?:extends|\{)/, # class FooBar
       /(?:const|let|var)\s+(use[A-Z][A-Za-z0-9_]*)\s*=/, # const useFoo = (hooks)
-      /function\s+(use[A-Z][A-Za-z0-9_]*)\s*\(/, # function useFoo(
-      /(?:const|let|var)\s+([a-z][A-Za-z0-9_]{2,})\s*=\s*(?:function|\()/, # const formatDate = function/arrow
-      /^function\s+([a-z][A-Za-z0-9_]{2,})\s*\(/, # function formatDate( at line start
+      /function\s+(use[A-Z][A-Za-z0-9_]*)\s*\(/,     # function useFoo(
 
       # ES module style (export default / named exports)
-      /^export\s+default\s+(?:function|class)\s+([A-Z][A-Za-z0-9_]*)/,             # export default function Foo
-      /^export\s+default\s+(?:function|class)\s+(use[A-Z][A-Za-z0-9_]*)/,          # export default function useFoo
-      /^export\s+(?:const|let|var)\s+([A-Z][A-Za-z0-9_]*)\s*=/,                    # export const Foo =
-      /^export\s+(?:const|let|var)\s+(use[A-Z][A-Za-z0-9_]*)\s*=/,                 # export const useFoo =
-      /^export\s+(?:const|let|var)\s+([a-z][A-Za-z0-9_]{2,})\s*=\s*(?:function|\()/, # export const formatDate =
-      /^export\s+function\s+([A-Z][A-Za-z0-9_]*)\s*\(/,                             # export function Foo(
-      /^export\s+function\s+(use[A-Z][A-Za-z0-9_]*)\s*\(/,                          # export function useFoo(
-      /^export\s+class\s+([A-Z][A-Za-z0-9_]*)\s*(?:extends|\{)/ # export class Foo
+      /^export\s+default\s+(?:function|class)\s+([A-Z][A-Za-z0-9_]*)/,
+      /^export\s+default\s+(?:function|class)\s+(use[A-Z][A-Za-z0-9_]*)/,
+      /^export\s+(?:const|let|var)\s+([A-Z][A-Za-z0-9_]*)\s*=/,
+      /^export\s+(?:const|let|var)\s+(use[A-Z][A-Za-z0-9_]*)\s*=/,
+      /^export\s+function\s+([A-Z][A-Za-z0-9_]*)\s*\(/,
+      /^export\s+function\s+(use[A-Z][A-Za-z0-9_]*)\s*\(/,
+      /^export\s+class\s+([A-Z][A-Za-z0-9_]*)\s*(?:extends|\{)/
     ].freeze
 
     # Patterns to detect usage in controller files.
@@ -66,7 +62,7 @@ module ReactManifest
 
     # rubocop:disable Metrics/MethodLength,Metrics/AbcSize,Metrics/PerceivedComplexity
     def scan(classification)
-      warnings      = []
+      warnings      = Set.new
       symbol_index  = {}
       external_file_paths = {} # file_path => relative_require_path for external_roots files
 
@@ -79,7 +75,7 @@ module ReactManifest
           symbols = extract_definitions(file_path)
           symbols.each do |sym|
             if symbol_index.key?(sym)
-              warnings << "Duplicate symbol '#{sym}' in #{relative} (already from #{symbol_index[sym]})"
+              warnings.add("Duplicate symbol '#{sym}' in #{relative} (already from #{symbol_index[sym]})")
             else
               symbol_index[sym] = relative
             end
@@ -131,7 +127,7 @@ module ReactManifest
         files   = js_files_in(ctrl[:path])
         used    = Set.new
 
-        warnings << "Controller dir '#{ctrl[:name]}' has no JS/JSX files" if files.empty? && @config.verbose?
+        warnings.add("Controller dir '#{ctrl[:name]}' has no JS/JSX files") if files.empty? && @config.verbose?
 
         files.each do |file_path|
           validate_naming(file_path, ctrl[:name], warnings)
@@ -150,7 +146,7 @@ module ReactManifest
       Result.new(
         symbol_index: symbol_index,
         controller_usages: controller_usages,
-        warnings: warnings,
+        warnings: warnings.to_a,
         shared_violations: shared_violations,
         external_violations: external_violations
       )
@@ -200,8 +196,8 @@ module ReactManifest
       # Expected: <controller>_index, <controller>_show, <controller>_form, etc.
       return if basename.start_with?("#{ctrl_name}_") || basename == ctrl_name
 
-      warnings << "File '#{File.basename(file_path)}' in '#{ctrl_name}' does not follow " \
-                  "'#{ctrl_name}_<action>.js.jsx' naming convention"
+      warnings.add("File '#{File.basename(file_path)}' in '#{ctrl_name}' does not follow " \
+                  "'#{ctrl_name}_<action>.js.jsx' naming convention")
     end
 
     def detect_shared_violations(shared_file_paths, controller_symbol_index, warnings)
@@ -225,9 +221,9 @@ module ReactManifest
             info = controller_symbol_index[sym]
             violations << { shared_file: relative, symbol: sym,
                             controller: info[:controller], app_file: info[:file] }
-            warnings << "Shared file '#{relative}' uses app-dir symbol '#{sym}' " \
+            warnings.add("Shared file '#{relative}' uses app-dir symbol '#{sym}' " \
                         "(from ux/app/#{info[:controller]}). " \
-                        "Move '#{sym}' to a shared dir or the shared file will be incomplete."
+                        "Move '#{sym}' to a shared dir or the shared file will be incomplete.")
           end
         end
       end
@@ -255,9 +251,9 @@ module ReactManifest
             info = controller_symbol_index[sym]
             violations << { external_file: relative, symbol: sym,
                             controller: info[:controller], app_file: info[:file] }
-            warnings << "External file '#{relative}' uses app-dir symbol '#{sym}' " \
+            warnings.add("External file '#{relative}' uses app-dir symbol '#{sym}' " \
                         "(from ux/app/#{info[:controller]}). " \
-                        "Move '#{sym}' into a shared ux dir to avoid duplicate runtime declarations."
+                        "Move '#{sym}' into a shared ux dir to avoid duplicate runtime declarations.")
           end
         end
       end
@@ -273,8 +269,7 @@ module ReactManifest
 
       fanout.each do |file, count|
         if count > 3
-          warnings << "High fan-out: '#{file}' is used by #{count} controllers " \
-                      "(consider ensuring it's in the shared bundle)"
+          warnings.add("High fan-out: '#{file}' is used by #{count} controllers")
         end
       end
     end
@@ -282,10 +277,10 @@ module ReactManifest
     def read_controller_file(file_path, warnings)
       File.read(file_path, encoding: "utf-8")
     rescue Errno::ENOENT, Errno::EACCES => e
-      warnings << "Skipping #{file_path}: #{e.message}"
+      warnings.add("Skipping #{file_path}: #{e.message}")
       nil
     rescue Encoding::InvalidByteSequenceError
-      warnings << "Skipping #{file_path}: not valid UTF-8"
+      warnings.add("Skipping #{file_path}: not valid UTF-8")
       nil
     end
 

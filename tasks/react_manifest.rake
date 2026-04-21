@@ -130,12 +130,6 @@ namespace :react_manifest do
     scan_result    = scanner.scan(classification)
     dep_map        = ReactManifest::DependencyMap.new(scan_result)
     dep_map.print_report
-
-    unless scan_result.warnings.empty?
-      puts "Warnings (#{scan_result.warnings.size}):"
-      scan_result.warnings.each { |w| puts "  ⚠  #{w}" }
-      puts
-    end
   end
 
   desc "Analyze application*.js files — show what migrate_application would change"

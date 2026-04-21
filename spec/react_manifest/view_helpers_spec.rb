@@ -14,21 +14,9 @@ RSpec.describe ReactManifest do
 
     let(:config) { ReactManifest.configuration }
 
-    it "always includes the shared bundle" do
-      bundles = described_class.resolve_bundles("notifications")
-      expect(bundles).to include("ux_manifests/ux_shared")
-    end
-
     it "includes the controller-specific bundle when it exists" do
       bundles = described_class.resolve_bundles("notifications")
       expect(bundles).to include("ux_manifests/ux_notifications")
-    end
-
-    it "shared bundle comes before controller bundle" do
-      bundles = described_class.resolve_bundles("notifications")
-      shared_idx = bundles.index("ux_manifests/ux_shared")
-      ctrl_idx   = bundles.index("ux_manifests/ux_notifications")
-      expect(shared_idx).to be < ctrl_idx
     end
 
     it "returns only shared bundles for a pure ERB controller with no JSX" do
@@ -42,9 +30,8 @@ RSpec.describe ReactManifest do
       expect(bundles).to include("ux_manifests/ux_main")
     end
 
-    it "returns empty array when no shared bundle and no match (zero-JS page)" do
+    it "returns empty array when no controller bundle and no always_include" do
       ReactManifest.configure do |c|
-        c.shared_bundle  = "nonexistent_bundle"
         c.always_include = []
       end
       bundles = described_class.resolve_bundles("sessions")
@@ -83,16 +70,10 @@ RSpec.describe ReactManifest do
     end
 
     describe "edge cases" do
-      it "returns only shared bundle for an empty string controller" do
+      it "returns only controller bundle for an empty string controller" do
         bundles = described_class.resolve_bundles("")
-        # ux_ exists if generator made one; otherwise just shared
-        expect(bundles).to include("ux_manifests/ux_shared")
-      end
-
-      it "does not duplicate shared bundle in always_include" do
-        ReactManifest.configure { |c| c.always_include = [config.shared_bundle] }
-        bundles = described_class.resolve_bundles("notifications")
-        expect(bundles.count("ux_manifests/#{config.shared_bundle}")).to eq(1)
+        # Empty string controller should return empty since no ux_ exists for it
+        expect(bundles).to be_empty
       end
 
       it "does not include a bundle that does not exist on disk" do
@@ -252,11 +233,11 @@ RSpec.describe ReactManifest do
       end
     end
 
-    it "returns shared and direct bundle for known components" do
+    it "returns direct bundle for known components" do
       ReactManifest::Generator.new(ReactManifest.configuration).run!
 
       expect(described_class.resolve_bundles_for_component_direct("UsersIndex"))
-        .to eq(%w[ux_manifests/ux_shared ux_manifests/ux_users])
+        .to eq(%w[ux_manifests/ux_users])
     end
 
     it "does not include transitive dependency bundles as separate scripts" do
@@ -271,7 +252,7 @@ RSpec.describe ReactManifest do
       ReactManifest::Generator.new(ReactManifest.configuration).run!
 
       expect(described_class.resolve_bundles_for_component_direct("AccountShow"))
-        .to eq(%w[ux_manifests/ux_shared ux_manifests/ux_account])
+        .to eq(%w[ux_manifests/ux_account])
     end
   end
 end
@@ -323,16 +304,6 @@ RSpec.describe ReactManifest::ViewHelpers do
     expect(second).not_to include("ux_users.js")
   end
 
-  it "does not re-emit shared bundle when legacy bundle name was already emitted" do
-    view = host_class.new
-    view.instance_variable_set(:@_react_manifest_emitted_bundles, ["ux_shared"])
-
-    html = view.react_component("UsersIndex")
-
-    expect(html).to include("ux_users.js")
-    expect(html).not_to include("ux_shared.js")
-  end
-
   it "injects only direct bundle for cross-controller component usage" do
     dep_dir = Rails.root.join("app/assets/javascripts/ux/app/user_session")
     app_dir = Rails.root.join("app/assets/javascripts/ux/app/account")
@@ -345,7 +316,6 @@ RSpec.describe ReactManifest::ViewHelpers do
     ReactManifest::Generator.new(ReactManifest.configuration).run!
 
     html = host_class.new.react_component("AccountShow")
-    expect(html).to include("ux_shared.js")
     expect(html).to include("ux_account.js")
     expect(html).not_to include("ux_user_session.js")
   end
@@ -362,7 +332,6 @@ RSpec.describe ReactManifest::ViewHelpers do
     ReactManifest::Generator.new(ReactManifest.configuration).run!
 
     html = host_class.new.react_component("MainIndex")
-    expect(html).to include("ux_shared.js")
     expect(html).to include("ux_main.js")
     expect(html).not_to include("ux_design_variables.js")
   end
@@ -380,7 +349,6 @@ RSpec.describe ReactManifest::ViewHelpers do
     ReactManifest::Generator.new(ReactManifest.configuration).run!
 
     html = host_class.new.react_component("MainIndex")
-    expect(html).to include("ux_shared.js")
     expect(html).to include("ux_main.js")
     expect(html).not_to include("ux_design_variables.js")
   end
@@ -398,7 +366,6 @@ RSpec.describe ReactManifest::ViewHelpers do
     ReactManifest::Generator.new(ReactManifest.configuration).run!
 
     html = host_class.new.react_component("MainIndex")
-    expect(html).to include("ux_shared.js")
     expect(html).to include("ux_main.js")
     expect(html).not_to include("ux_design_variables.js")
   end
@@ -416,7 +383,6 @@ RSpec.describe ReactManifest::ViewHelpers do
     ReactManifest::Generator.new(ReactManifest.configuration).run!
 
     html = host_class.new.react_component("MainIndex")
-    expect(html).to include("ux_shared.js")
     expect(html).to include("ux_main.js")
     expect(html).not_to include("ux_design_variables.js")
   end
@@ -438,7 +404,6 @@ RSpec.describe ReactManifest::ViewHelpers do
     ReactManifest::Generator.new(ReactManifest.configuration).run!
 
     html = host_class.new.react_component("MainIndex")
-    expect(html).to include("ux_shared.js")
     expect(html).to include("ux_main.js")
     expect(html).not_to include("ux_design_variables.js")
   end
@@ -465,7 +430,6 @@ RSpec.describe ReactManifest::ViewHelpers do
       view = host_with_bundle_tag.new("users")
 
       bundle_html = view.react_bundle_tag
-      expect(bundle_html).to include("ux_shared.js")
       expect(bundle_html).to include("ux_users.js")
 
       component_html = view.react_component("UsersIndex")

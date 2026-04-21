@@ -1,4 +1,4 @@
-const SettingsShow = () => {
+const SettingsIndex = () => {
   const { useState } = React;
   const _activeTab = useState('profile');
   const activeTab = _activeTab[0];
@@ -170,4 +170,4 @@ const SettingsShow = () => {
   );
 };
 
-window.SettingsShow = SettingsShow;
+window.SettingsIndex = SettingsIndex;
