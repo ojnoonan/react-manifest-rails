@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.26] - 2026-04-22
+
+### Fixed
+- Resolved RuboCop offenses introduced in v0.2.25: removed useless `lib_reqs`/`shared_reqs` assignments in `build_controller`, corrected multiline method-call indentation in `build_shared`, and wrapped long line in `run!`.
+
+### Changed
+- Release preflight script now runs the full RSpec suite and RuboCop before allowing a tag/push, blocking the release if either fails.
+
 ## [0.2.25] - 2026-04-22
 
 ### Fixed

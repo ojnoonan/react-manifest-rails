@@ -48,7 +48,9 @@ module ReactManifest
 
       # Phase 1: build all content in memory — no I/O.
       shared_manifest = build_shared(classification.shared_dirs)
-      manifests = [shared_manifest] + classification.controller_dirs.map { |ctrl| build_controller(ctrl, controller_context) }
+      manifests = [shared_manifest] + classification.controller_dirs.map do |ctrl|
+        build_controller(ctrl, controller_context)
+      end
 
       migrate_legacy_manifests!
 
@@ -66,10 +68,10 @@ module ReactManifest
     def build_shared(shared_dirs)
       lines = header_lines
       reqs = shared_dirs
-               .flat_map { |d| js_files_in(d[:path]) }
-               .map { |f| normalize_require_path(relative_require_path(f)) }
-               .uniq
-               .sort
+             .flat_map { |d| js_files_in(d[:path]) }
+             .map { |f| normalize_require_path(relative_require_path(f)) }
+             .uniq
+             .sort
 
       if reqs.empty?
         lines << "// (no shared JS files found)"
@@ -86,8 +88,8 @@ module ReactManifest
       lines = header_lines
       always_include_reqs = controller_context[:always_include_requires].fetch(ctrl[:bundle_name], [])
       dep_requires = controller_dependency_requires(ctrl[:bundle_name], controller_context)
-      lib_reqs = controller_context[:shared_lib_requires]
-      shared_reqs = controller_context[:shared_requires].fetch(ctrl[:bundle_name], Set.new).to_a.sort
+      controller_context[:shared_lib_requires]
+      controller_context[:shared_requires].fetch(ctrl[:bundle_name], Set.new).to_a.sort
       ext_reqs = controller_context[:external_requires].fetch(ctrl[:bundle_name], Set.new).to_a.sort
 
       files = js_files_in(ctrl[:path])

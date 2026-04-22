@@ -67,6 +67,22 @@ if [[ -n "$DIRTY" ]]; then
   ERRORS+=("Release-critical files have uncommitted changes:\n$DIRTY\nCommit them before tagging.")
 fi
 
+# ── 7. Run RSpec ──────────────────────────────────────────────────────────
+echo ""
+echo "[release-preflight] Running test suite..."
+bundle exec rspec --no-color 2>&1 | tee /tmp/rspec-preflight.log
+if ! grep -qE "[0-9]+ examples?, 0 failures" /tmp/rspec-preflight.log; then
+  ERRORS+=("RSpec suite failed. Fix failing tests before releasing.")
+fi
+
+# ── 8. Run RuboCop ────────────────────────────────────────────────────────
+echo ""
+echo "[release-preflight] Running RuboCop..."
+bundle exec rubocop --parallel --no-color 2>&1 | tee /tmp/rubocop-preflight.log
+if ! grep -q "no offenses detected" /tmp/rubocop-preflight.log; then
+  ERRORS+=("RuboCop offenses detected. Run: bundle exec rubocop -a")
+fi
+
 # ── Report ─────────────────────────────────────────────────────────────────
 if [[ ${#ERRORS[@]} -gt 0 ]]; then
   echo ""
