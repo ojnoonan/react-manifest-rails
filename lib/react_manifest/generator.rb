@@ -47,7 +47,8 @@ module ReactManifest
                                                     scan_result)
 
       # Phase 1: build all content in memory — no I/O.
-      manifests = classification.controller_dirs.map { |ctrl| build_controller(ctrl, controller_context) }
+      shared_manifest = build_shared(classification.shared_dirs)
+      manifests = [shared_manifest] + classification.controller_dirs.map { |ctrl| build_controller(ctrl, controller_context) }
 
       migrate_legacy_manifests!
 
@@ -62,6 +63,23 @@ module ReactManifest
 
     # ------------------------------------------------------------------ shared
 
+    def build_shared(shared_dirs)
+      lines = header_lines
+      reqs = shared_dirs
+               .flat_map { |d| js_files_in(d[:path]) }
+               .map { |f| normalize_require_path(relative_require_path(f)) }
+               .uniq
+               .sort
+
+      if reqs.empty?
+        lines << "// (no shared JS files found)"
+      else
+        reqs.each { |req| lines << "//= require #{req}" }
+      end
+
+      { filename: "#{@config.shared_bundle}.js", content: "#{lines.join("\n")}\n" }
+    end
+
     # --------------------------------------------------------------- controller
 
     def build_controller(ctrl, controller_context)
@@ -74,7 +92,7 @@ module ReactManifest
 
       files = js_files_in(ctrl[:path])
       own_requires = files.map { |f| relative_require_path(f) }
-      all_requires = (always_include_reqs + dep_requires + lib_reqs + shared_reqs + ext_reqs + own_requires).uniq
+      all_requires = (always_include_reqs + dep_requires + ext_reqs + own_requires).uniq
 
       if all_requires.empty?
         lines << "// (no JSX files found in #{ctrl[:name]}/)"

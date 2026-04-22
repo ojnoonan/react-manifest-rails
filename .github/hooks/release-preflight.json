@@ -1,0 +1,19 @@
+{
+  "version": "1.0",
+  "description": "Block git tag/push commands if version, CHANGELOG, and Gemfile.lock are not in sync.",
+  "hooks": [
+    {
+      "event": "PreToolUse",
+      "filters": {
+        "tool": "run_in_terminal",
+        "input": "(git tag[[:space:]].*v[0-9]|git push.*v[0-9]|git push.*--tags)"
+      },
+      "action": {
+        "type": "runScript",
+        "script": ".github/hooks/scripts/release-preflight.sh",
+        "onFailure": "block"
+      },
+      "message": "Release preflight check failed. Fix the reported issues before tagging."
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "version": "1.0",
+  "description": "Inject the full release checklist into context whenever the agent session starts, so release steps are always followed in order.",
+  "hooks": [
+    {
+      "event": "SessionStart",
+      "action": {
+        "type": "injectContext",
+        "context": "## react-manifest-rails Release Protocol\n\nWhen preparing a release, ALWAYS follow these steps in order:\n\n1. **Bump VERSION** in `lib/react_manifest/version.rb`.\n   - Single source of truth — gemspec, generated manifest headers, and Gemfile.lock all derive from this.\n\n2. **Update CHANGELOG.md**\n   - Rename the `## [Unreleased]` heading to `## [X.Y.Z] - YYYY-MM-DD` (today's date).\n   - Add a fresh empty `## [Unreleased]` block at the top for the next cycle.\n\n3. **Refresh Gemfile.lock**\n   ```bash\n   bundle install\n   ```\n   This updates the path-spec version entry so CI doesn't fail with a frozen Bundler error.\n\n4. **Commit the three release files together**\n   ```bash\n   git add lib/react_manifest/version.rb CHANGELOG.md Gemfile.lock\n   git commit -m \"Release vX.Y.Z\"\n   ```\n\n5. **Create an annotated tag** (must match VERSION exactly)\n   ```bash\n   git tag -a vX.Y.Z -m \"Release vX.Y.Z\"\n   ```\n\n6. **Push branch + tag together**\n   ```bash\n   git push origin main vX.Y.Z\n   ```\n   The tag push triggers `.github/workflows/release.yml`, which runs tests, creates a GitHub Release, and publishes to RubyGems.\n\n### What the release workflow does automatically\n- Runs the full RSpec test suite.\n- Creates a GitHub Release (with auto-generated notes from the tag).\n- Publishes the gem to RubyGems via trusted publishing.\n\n### Common mistakes that break the workflow\n- Pushing the tag before pushing the commit → workflow checks out a detached HEAD without the version bump.\n- Not running `bundle install` → CI fails with `Bundler::GemfileNotSatisfiable` on the frozen lockfile.\n- CHANGELOG still shows `[Unreleased]` → GitHub Release notes are misleading.\n- Tag like `v0.3.0` but `VERSION = \"0.2.24\"` → gem is published under the wrong version."
+      }
+    }
+  ]
+}

@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.25] - 2026-04-22
+
+### Fixed
+- Restored `build_shared` method in `Generator` that had been deleted, causing `ux_shared.js` to never be written. This was the root cause of a major regression where shared components (`components/`, `hooks/`, `lib/`) were absent from the asset pipeline on clean deploys.
+- `Generator#run!` now generates `ux_shared.js` (all files from shared dirs) as the first manifest before controller manifests.
+- Controller manifests (`ux_<controller>.js`) no longer inline shared-dir files (`lib_reqs`, `shared_reqs`). Shared files live exclusively in `ux_shared.js`, restoring the original lean-manifest architecture and preventing duplication.
+- `resolve_bundles` view helper no longer silently drops the shared bundle when `ux_shared.js` is absent; the file is now always generated so the helper correctly returns `[ux_shared, ux_<controller>]` for every page.
+
+### Added
+- Release preflight hook (`.github/hooks/release-preflight.json` + script) that blocks `git tag`/`git push` commands when `VERSION`, `CHANGELOG.md`, and `Gemfile.lock` are out of sync.
+- Session-start hook (`.github/hooks/release-session.json`) that injects the release protocol into the Copilot agent context.
+
 ## [0.2.24] - 2026-04-22
 
 ### Fixed

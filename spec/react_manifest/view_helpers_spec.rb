@@ -30,12 +30,12 @@ RSpec.describe ReactManifest do
       expect(bundles).to include("ux_manifests/ux_main")
     end
 
-    it "returns empty array when no controller bundle and no always_include" do
+    it "returns only the shared bundle when no controller bundle and no always_include" do
       ReactManifest.configure do |c|
         c.always_include = []
       end
       bundles = described_class.resolve_bundles("sessions")
-      expect(bundles).to be_empty
+      expect(bundles).to eq(%w[ux_manifests/ux_shared])
     end
 
     describe "namespaced controllers" do
@@ -70,10 +70,10 @@ RSpec.describe ReactManifest do
     end
 
     describe "edge cases" do
-      it "returns only controller bundle for an empty string controller" do
+      it "returns only the shared bundle for an empty string controller" do
         bundles = described_class.resolve_bundles("")
-        # Empty string controller should return empty since no ux_ exists for it
-        expect(bundles).to be_empty
+        # Empty string controller has no app-specific bundle; shared bundle still loads
+        expect(bundles).to eq(%w[ux_manifests/ux_shared])
       end
 
       it "does not include a bundle that does not exist on disk" do
@@ -233,11 +233,11 @@ RSpec.describe ReactManifest do
       end
     end
 
-    it "returns direct bundle for known components" do
+    it "returns shared + direct bundle for known components" do
       ReactManifest::Generator.new(ReactManifest.configuration).run!
 
       expect(described_class.resolve_bundles_for_component_direct("UsersIndex"))
-        .to eq(%w[ux_manifests/ux_users])
+        .to eq(%w[ux_manifests/ux_shared ux_manifests/ux_users])
     end
 
     it "does not include transitive dependency bundles as separate scripts" do
@@ -251,8 +251,10 @@ RSpec.describe ReactManifest do
 
       ReactManifest::Generator.new(ReactManifest.configuration).run!
 
+      # Shared bundle + owning controller bundle only — transitive controller deps NOT emitted
+      # separately (they are already inlined into the owning controller manifest by the generator)
       expect(described_class.resolve_bundles_for_component_direct("AccountShow"))
-        .to eq(%w[ux_manifests/ux_account])
+        .to eq(%w[ux_manifests/ux_shared ux_manifests/ux_account])
     end
   end
 end

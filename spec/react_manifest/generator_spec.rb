@@ -24,6 +24,10 @@ RSpec.describe ReactManifest::Generator do
   describe "#run!" do
     before { generator.run! }
 
+    it "generates ux_shared.js" do
+      expect(File.exist?(File.join(output_dir, "ux_shared.js"))).to be true
+    end
+
     it "generates ux_notifications.js" do
       expect(File.exist?(File.join(output_dir, "ux_notifications.js"))).to be true
     end
@@ -34,6 +38,29 @@ RSpec.describe ReactManifest::Generator do
 
     it "generates ux_main.js" do
       expect(File.exist?(File.join(output_dir, "ux_main.js"))).to be true
+    end
+
+    describe "ux_shared.js content" do
+      subject(:content) { read_manifest("ux_shared.js") }
+
+      it "includes shared component files" do
+        expect(content).to include("ux/components/buttons/primary_button")
+      end
+
+      it "includes shared hook files" do
+        expect(content).to include("ux/hooks/use_fetch")
+      end
+
+      it "includes shared lib files" do
+        expect(content).to include("ux/lib/api_helpers")
+      end
+    end
+
+    it "does not inline shared component files into controller manifests" do
+      ctrl_content = read_manifest("ux_notifications.js")
+      expect(ctrl_content).not_to include("ux/components/")
+      expect(ctrl_content).not_to include("ux/hooks/")
+      expect(ctrl_content).not_to include("ux/lib/")
     end
 
     describe "ux_notifications.js content" do
