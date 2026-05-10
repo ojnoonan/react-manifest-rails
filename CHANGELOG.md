@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.27] - 2026-05-11
+
+### Fixed
+- Boot-time manifest generation now runs on every development restart rather than only when manifests are completely absent. Shared files added between restarts (e.g. via `git merge`) are picked up immediately without needing to touch a watched file or manually run `rails react_manifest:generate`.
+
+### Changed
+- Removed dead selective-shared-loading infrastructure from `Generator`. The scanner is no longer called from `Generator#run!` (it remains available for `react_manifest:analyze`). `build_controller_context` no longer computes `shared_requires`, `shared_lib_requires`, or their four supporting private methods (`shared_require_path_set`, `shared_lib_require_paths`, `build_shared_dependency_map`, `expand_shared_requires`). Controller manifests continue to load all shared files via `ux_shared` plus cross-bundle and external dependencies.
+
 ## [0.2.26] - 2026-04-22
 
 ### Fixed
