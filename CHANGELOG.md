@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.28] - 2026-05-11
+
+### Fixed
+- Boot generation now runs after app initializers (`config/initializers/`) have loaded, so the generator always uses the fully-configured `ux_root` and related settings. Previously the initializer ran during the Railtie phase (before `config/initializers/`), causing it to silently generate against default paths and produce unchanged manifests.
+
 ## [0.2.27] - 2026-05-11
 
 ### Fixed

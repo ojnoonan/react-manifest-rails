@@ -3,28 +3,23 @@ require "rails/railtie"
 module ReactManifest
   class Railtie < Rails::Railtie
     # ----------------------------------------------------------------
-    # In development, generate once on boot if expected manifests are missing.
-    # This makes first-run setup deterministic even before any file change event.
+    # In development, always regenerate manifests on boot so that files
+    # added between restarts (e.g. via git merge) are picked up immediately.
+    # The generator is idempotent — it skips writes when content is unchanged.
     # ----------------------------------------------------------------
-    initializer "react_manifest.ensure_manifests" do
+    initializer "react_manifest.ensure_manifests", after: :load_config_initializers do
       next unless Rails.env.development?
 
       config = ReactManifest.configuration
-      # Private class method: call via send from the initializer instance context.
-      missing = self.class.send(:missing_manifest_bundles, config)
-      next if missing.empty?
-
-      message = "[ReactManifest] Missing manifests on boot: #{missing.join(', ')}. Generating now..."
-      Rails.logger&.info(message)
-      $stdout.puts(message) if config.stdout_logging?
 
       begin
         results = ReactManifest::Generator.new(config).run!
         written = results.count { |r| r[:status] == :written }
-        unchanged = results.count { |r| r[:status] == :unchanged }
-        done = "[ReactManifest] Boot generation complete: #{written} written, #{unchanged} unchanged"
-        Rails.logger&.info(done)
-        $stdout.puts(done) if config.stdout_logging?
+        if written.positive?
+          done = "[ReactManifest] Boot generation complete: #{written} written"
+          Rails.logger&.info(done)
+          $stdout.puts(done) if config.stdout_logging?
+        end
       rescue StandardError => e
         error = "[ReactManifest] Could not generate manifests on boot: #{e.message}"
         Rails.logger&.warn(error)
@@ -97,22 +92,6 @@ module ReactManifest
 
       if Rake::Task.task_defined?("assets:precompile")
         Rake::Task["assets:precompile"].enhance(["react_manifest:generate"])
-      end
-    end
-
-    class << self
-      private
-
-      def missing_manifest_bundles(config)
-        expected_manifest_bundles(config).reject do |bundle_name|
-          File.exist?(File.join(config.abs_manifest_dir, "#{bundle_name}.js")) ||
-            File.exist?(File.join(config.abs_output_dir, "#{bundle_name}.js"))
-        end
-      end
-
-      def expected_manifest_bundles(config)
-        classification = ReactManifest::TreeClassifier.new(config).classify
-        ([config.shared_bundle] + classification.controller_dirs.map { |ctrl| ctrl[:bundle_name] }).uniq
       end
     end
   end
