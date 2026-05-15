@@ -177,5 +177,24 @@ RSpec.describe ReactManifest::LayoutPatcher do
         expect(result).to eq([])
       end
     end
+
+    context "when the write is interrupted (File.rename raises)" do
+      it "leaves the original layout file unchanged" do
+        original = read_layout("application.html.erb")
+        allow(File).to receive(:rename).and_raise(Errno::ENOSPC, "No space left on device")
+
+        expect { patcher.patch! }.to raise_error(Errno::ENOSPC)
+
+        expect(read_layout("application.html.erb")).to eq(original)
+      end
+
+      it "does not leave a tmp file behind" do
+        allow(File).to receive(:rename).and_raise(Errno::ENOSPC, "No space left on device")
+
+        expect { patcher.patch! }.to raise_error(Errno::ENOSPC)
+
+        expect(Dir.glob(File.join(layouts_dir, "*.tmp.*"))).to be_empty
+      end
+    end
   end
 end

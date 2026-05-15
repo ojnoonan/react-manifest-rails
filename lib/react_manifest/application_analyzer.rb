@@ -6,6 +6,8 @@ module ReactManifest
   #
   # Produces a human-readable report without writing anything.
   class ApplicationAnalyzer
+    include ReactManifest::Logging
+
     DIRECTIVE_PATTERN = %r{^\s*//=\s+(require(?:_tree|_directory)?)\s+(.+)$}
 
     # Libs we recognise as vendor (case-insensitive partial match on the require path)
@@ -47,30 +49,30 @@ module ReactManifest
 
     # Pretty-print the analysis report to stdout
     def print_report(results = analyze)
-      puts "\n=== ReactManifest: Application Manifest Analysis ===\n"
+      log_info "\n=== ReactManifest: Application Manifest Analysis ===\n"
 
       if results.empty?
-        puts "No application*.js files found in #{@config.abs_output_dir}"
+        log_info "No application*.js files found in #{@config.abs_output_dir}"
         return
       end
 
       results.each do |result|
         rel = result.file.sub("#{Rails.root}/", "")
         status = result.clean? ? "✓ already clean" : "⚠ needs migration"
-        puts "\n#{rel} [#{status}]"
-        puts "-" * 60
+        log_info "\n#{rel} [#{status}]"
+        log_info "-" * 60
 
         icon_map = { vendor: "  ✓ KEEP   ", ux_code: "  ✗ REMOVE ", unknown: "  ? REVIEW " }
         result.directives.each do |d|
           icon = icon_map[d.classification]
-          puts "#{icon} #{d.original_line.strip}"
-          puts "           → #{d.note}" if d.note
+          log_info "#{icon} #{d.original_line.strip}"
+          log_info "           → #{d.note}" if d.note
         end
       end
 
-      puts "\n"
-      puts "Run `rails react_manifest:migrate_application` to apply changes."
-      puts "Use `--dry-run` (or config.dry_run = true) to preview first.\n\n"
+      log_info "\n"
+      log_info "Run `rails react_manifest:migrate_application` to apply changes."
+      log_info "Use `--dry-run` (or config.dry_run = true) to preview first.\n\n"
     end
 
     private

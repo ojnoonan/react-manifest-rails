@@ -11,23 +11,25 @@ module ReactManifest
     DEBOUNCE_SECONDS = 0.3
 
     class << self
+      include ReactManifest::Logging
+
       def start(config = ReactManifest.configuration)
         begin
           require "listen"
         rescue LoadError
-          log "listen gem not available — file watching disabled. " \
-              "Add `gem 'listen'` to the development group in your Gemfile."
+          log_warn "listen gem not available — file watching disabled. " \
+                   "Add `gem 'listen'` to the development group in your Gemfile."
           return
         end
 
         root = config.abs_ux_root
 
         unless Dir.exist?(root)
-          log "ux_root does not exist (#{root}) — file watching disabled until directory is created."
+          log_warn "ux_root does not exist (#{root}) — file watching disabled until directory is created."
           return
         end
 
-        log "Watching #{root.sub("#{Rails.root}/", '')} for changes..."
+        log_info "Watching #{root.sub("#{Rails.root}/", '')} for changes..."
 
         @listener = Listen.to(
           root,
@@ -35,8 +37,8 @@ module ReactManifest
           latency: DEBOUNCE_SECONDS
         ) do |modified, added, removed|
           changed = (modified + added + removed).map { |f| File.basename(f) }
-          log "File change detected: #{changed.join(', ')}"
-          regenerate!(config)
+          log_info "File change detected: #{changed.join(', ')}"
+          handle_file_changes(modified, added, removed, config)
         end
 
         @listener.start
@@ -53,22 +55,17 @@ module ReactManifest
 
       private
 
-      def regenerate!(config)
-        Generator.new(config).run!
-        log "Manifests regenerated"
-      rescue StandardError => e
-        log "Error during regeneration: #{e.message}"
-        log e.backtrace.first(5).join("\n") if config.verbose?
+      def handle_file_changes(modified, added, removed, config)
+        (modified + added + removed).each { |f| Scanner.invalidate(f) }
+        regenerate!(config)
       end
 
-      def log(message)
-        msg = "[ReactManifest] #{message}"
-        if defined?(Rails) && Rails.logger
-          Rails.logger.info(msg)
-          $stdout.puts(msg) if Rails.env.development? && ReactManifest.configuration.stdout_logging?
-        else
-          $stdout.puts msg
-        end
+      def regenerate!(config)
+        Generator.new(config).run!
+        log_info "Manifests regenerated"
+      rescue StandardError => e
+        log_warn "Error during regeneration: #{e.message}"
+        log_debug e.backtrace.first(5).join("\n") if config.verbose?
       end
     end
   end

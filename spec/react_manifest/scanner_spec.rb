@@ -39,6 +39,13 @@ RSpec.describe ReactManifest::Scanner do
     it "warns when duplicate shared symbols are defined" do
       expect(result.warnings.any? { |w| w.include?("Duplicate symbol 'PrimaryButton'") }).to be true
     end
+
+    it "logs symbol count via Rails.logger.debug when verbose" do
+      ReactManifest.configure { |c| c.verbose = true }
+      allow(Rails.logger).to receive(:debug)
+      scanner.scan(classifier.classify)
+      expect(Rails.logger).to have_received(:debug).with(a_string_including("symbols indexed"))
+    end
   end
 
   describe "Phase 2: controller usage detection" do
@@ -361,6 +368,120 @@ RSpec.describe ReactManifest::Scanner do
       File.write(junk_file, "\x00\x01\x02 not js !!!")
 
       expect { scanner.scan(classifier.classify) }.not_to raise_error
+    end
+  end
+
+  describe "single traversal" do
+    let(:classification) { classifier.classify }
+
+    it "visits each controller dir exactly once per scan" do
+      call_count = Hash.new(0)
+      allow(scanner).to receive(:js_files_in).and_wrap_original do |m, dir|
+        call_count[dir] += 1
+        m.call(dir)
+      end
+
+      scanner.scan(classification)
+
+      classification.controller_dirs.each do |ctrl|
+        count = call_count[ctrl[:path]]
+        expect(count).to eq(1), "Expected #{ctrl[:path]} traversed once, got #{count}"
+      end
+    end
+
+    it "does not re-read shared files during violation detection" do
+      read_count = Hash.new(0)
+      allow(File).to receive(:read).and_wrap_original do |m, path, **opts|
+        rel = path.to_s.sub("#{Rails.root}/", "")
+        read_count[rel] += 1 if rel.start_with?("app/assets/javascripts/ux/")
+        m.call(path, **opts)
+      end
+
+      scanner.scan(classification)
+
+      read_count.each do |file, count|
+        expect(count).to eq(1), "Expected #{file} to be read once, got #{count}"
+      end
+    end
+  end
+
+  describe "symbol index caching" do
+    let(:classification) { classifier.classify }
+
+    it "exposes an empty file_symbol_cache after reset!" do
+      ReactManifest.reset!
+      expect(ReactManifest::Scanner.file_symbol_cache).to be_empty
+    end
+
+    it "populates the file symbol cache after scanning shared files" do
+      scanner.scan(classification)
+      expect(ReactManifest::Scanner.file_symbol_cache).not_to be_empty
+    end
+
+    it "does not re-read shared files on a repeated scan" do
+      scanner.scan(classification)
+
+      expect(scanner).not_to receive(:scan_file_definitions)
+      scanner.scan(classification)
+    end
+
+    it "clears the file symbol cache on ReactManifest.reset!" do
+      scanner.scan(classification)
+      expect(ReactManifest::Scanner.file_symbol_cache).not_to be_empty
+
+      ReactManifest.reset!
+      expect(ReactManifest::Scanner.file_symbol_cache).to be_empty
+    end
+
+    it "rescans only the invalidated file, leaving all others cached" do
+      scanner.scan(classification)
+
+      target_file = ReactManifest::Scanner.file_symbol_cache.keys.first
+      ReactManifest::Scanner.invalidate(target_file)
+
+      rescanned = []
+      allow(scanner).to receive(:parse_definitions).and_wrap_original do |m, content|
+        rescanned << content
+        m.call(content)
+      end
+
+      scanner.scan(classification)
+
+      expect(rescanned.size).to eq(1)
+    end
+
+    it "produces the same symbol index after a partial cache invalidation" do
+      result_before = scanner.scan(classification)
+
+      target_file = ReactManifest::Scanner.file_symbol_cache.keys.first
+      ReactManifest::Scanner.invalidate(target_file)
+
+      result_after = scanner.scan(classification)
+      expect(result_after.symbol_index).to eq(result_before.symbol_index)
+    end
+  end
+
+  describe "TypeScript extension handling" do
+    before do
+      ReactManifest.configure do |c|
+        c.extensions = %w[js jsx ts tsx]
+      end
+    end
+
+    it "indexes a .ts shared file with a clean require path (no .ts suffix)" do
+      components_dir = Rails.root.join(config.ux_root, "components")
+      File.write(File.join(components_dir, "ts_util.ts"), "export const TsUtil = () => {};\n")
+
+      result = scanner.scan(classifier.classify)
+      expect(result.symbol_index["TsUtil"]).to eq("ux/components/ts_util")
+    end
+
+    it "indexes a .tsx shared file with a clean require path (no .tsx suffix)" do
+      components_dir = Rails.root.join(config.ux_root, "components")
+      File.write(File.join(components_dir, "tsx_card.tsx"), "export const TsxCard = () => <div />;\n")
+
+      result = scanner.scan(classifier.classify)
+      expect(result.symbol_index["TsxCard"]).to eq("ux/components/tsx_card")
     end
   end
 end

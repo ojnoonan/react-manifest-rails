@@ -8,6 +8,8 @@ module ReactManifest
   # Usage:
   #   ReactManifest::SprocketsManifestPatcher.new(config).patch!
   class SprocketsManifestPatcher
+    include ReactManifest::Logging
+
     MANIFEST_GLOB = "app/assets/config/manifest.js".freeze
 
     Result = Struct.new(:file, :status, :detail, keyword_init: true)
@@ -37,13 +39,13 @@ module ReactManifest
       new_content = append_directive(content, directive)
 
       if @config.dry_run?
-        $stdout.puts "[ReactManifest] DRY-RUN: would patch #{short(path)}"
-        $stdout.puts "  + #{directive.strip}"
+        log_info "DRY-RUN: would patch #{short(path)}"
+        log_info "  + #{directive.strip}"
         return Result.new(file: path, status: :dry_run, detail: nil)
       end
 
       File.write(path, new_content, encoding: "utf-8")
-      $stdout.puts "[ReactManifest] Patched Sprockets manifest: #{short(path)}"
+      log_info "Patched Sprockets manifest: #{short(path)}"
       Result.new(file: path, status: :patched, detail: nil)
     end
 

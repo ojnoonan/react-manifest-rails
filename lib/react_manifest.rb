@@ -2,7 +2,9 @@ require "fileutils"
 require "set"
 
 require "react_manifest/version"
+require "react_manifest/logging"
 require "react_manifest/configuration"
+require "react_manifest/path_utils"
 require "react_manifest/tree_classifier"
 require "react_manifest/scanner"
 require "react_manifest/dependency_map"
@@ -28,6 +30,8 @@ module ReactManifest
 
     def reset!
       @configuration = nil
+      @component_maps_cache = nil
+      Scanner.clear_cache!
     end
 
     # Returns the ordered list of bundle logical names for a given controller.
@@ -133,6 +137,8 @@ module ReactManifest
     end
 
     def component_maps(config)
+      return @component_maps_cache if @component_maps_cache
+
       controller_dirs = TreeClassifier.new(config).classify.controller_dirs
       symbol_to_bundle = {}
       bundle_files = Hash.new { |h, k| h[k] = [] }
@@ -164,7 +170,7 @@ module ReactManifest
         end
       end
 
-      {
+      @component_maps_cache = {
         symbol_to_bundle: symbol_to_bundle,
         bundle_dependencies: bundle_dependencies
       }

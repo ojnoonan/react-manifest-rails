@@ -9,6 +9,8 @@ module ReactManifest
   # Usage:
   #   ReactManifest::LayoutPatcher.new(config).patch!
   class LayoutPatcher
+    include ReactManifest::Logging
+
     LAYOUTS_GLOB   = "app/views/layouts/*.html.{erb,haml,slim}".freeze
     BUNDLE_TAG_ERB = "<%= react_bundle_tag %>\n".freeze
     BUNDLE_TAG_HAML = "= react_bundle_tag\n".freeze
@@ -23,7 +25,7 @@ module ReactManifest
     def patch!
       layouts = find_layouts
       if layouts.empty?
-        $stdout.puts "[ReactManifest] No layout files found in #{layouts_dir}"
+        log_info "No layout files found in #{layouts_dir}"
         return []
       end
       layouts.map { |f| patch_file(f) }
@@ -58,13 +60,20 @@ module ReactManifest
       end
 
       if @config.dry_run?
-        $stdout.puts "[ReactManifest] DRY-RUN: would patch #{short(path)}"
+        log_info "DRY-RUN: would patch #{short(path)}"
         print_diff(content, new_content)
         return Result.new(file: path, status: :dry_run, detail: nil)
       end
 
-      File.write(path, new_content, encoding: "utf-8")
-      $stdout.puts "[ReactManifest] Patched layout: #{short(path)}"
+      tmp = "#{path}.tmp.#{Process.pid}"
+      begin
+        File.write(tmp, new_content, encoding: "utf-8")
+        File.rename(tmp, path)
+      rescue StandardError => e
+        FileUtils.rm_f(tmp)
+        raise e
+      end
+      log_info "Patched layout: #{short(path)}"
       Result.new(file: path, status: :patched, detail: nil)
     end
 
@@ -115,7 +124,7 @@ module ReactManifest
     def print_diff(old_content, new_content)
       old_lines = old_content.lines.map(&:chomp)
       new_lines = new_content.lines.map(&:chomp)
-      (new_lines - old_lines).each { |l| $stdout.puts "  + #{l}" }
+      (new_lines - old_lines).each { |l| log_info "  + #{l}" }
     end
   end
 end

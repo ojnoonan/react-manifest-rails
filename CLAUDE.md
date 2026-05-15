@@ -81,3 +81,17 @@ The `ReactManifest` module (including `resolve_bundles` and `controller_candidat
 - The `listen` gem is a soft dependency; never make it required at runtime.
 - Generated files carry an `AUTO-GENERATED` header; the generator never touches files without it.
 - All manifest writes are atomic (tmp + rename). Content is built fully in memory before any I/O begins.
+
+## Agent skills
+
+### Issue tracker
+
+Issues live in GitHub Issues (`github.com/ojnoonan/react-manifest-rails`). See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default canonical labels (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context layout: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.

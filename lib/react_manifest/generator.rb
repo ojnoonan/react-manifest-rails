@@ -1,5 +1,6 @@
 require "digest"
 require "tmpdir"
+require_relative "path_utils"
 
 module ReactManifest
   # Generates all ux_*.js Sprockets manifest files.
@@ -24,6 +25,9 @@ module ReactManifest
   # Never touches application.js, application_dev.js, or files in exclude_paths.
   # rubocop:disable Metrics/ClassLength
   class Generator
+    include PathUtils
+    include ReactManifest::Logging
+
     HEADER = <<~JS.freeze
       // AUTO-GENERATED — DO NOT EDIT
       // react-manifest-rails %<version>s
@@ -61,6 +65,28 @@ module ReactManifest
       results
     end
 
+    # Remove all AUTO-GENERATED ux_*.js manifests. Silently skips files that
+    # disappear between the directory scan and the read (TOCTOU-safe).
+    # Returns { removed: N, skipped: N }.
+    def clean!
+      targets  = [@config.abs_manifest_dir, @config.abs_output_dir].uniq
+      removed  = 0
+      skipped  = 0
+
+      targets.each do |dir|
+        Dir.glob(File.join(dir, "ux_*.js")).each do |file|
+          if auto_generated?(file)
+            File.delete(file)
+            removed += 1
+          else
+            skipped += 1
+          end
+        end
+      end
+
+      { removed: removed, skipped: skipped }
+    end
+
     private
 
     # ------------------------------------------------------------------ shared
@@ -88,8 +114,6 @@ module ReactManifest
       lines = header_lines
       always_include_reqs = controller_context[:always_include_requires].fetch(ctrl[:bundle_name], [])
       dep_requires = controller_dependency_requires(ctrl[:bundle_name], controller_context)
-      controller_context[:shared_lib_requires]
-      controller_context[:shared_requires].fetch(ctrl[:bundle_name], Set.new).to_a.sort
       ext_reqs = controller_context[:external_requires].fetch(ctrl[:bundle_name], Set.new).to_a.sort
 
       files = js_files_in(ctrl[:path])
@@ -254,7 +278,7 @@ module ReactManifest
       end
 
       if @config.dry_run?
-        $stdout.puts "[ReactManifest] DRY-RUN: would write #{dest}"
+        log_info "DRY-RUN: would write #{dest}"
         print_diff(dest, content)
         return { path: dest, status: :dry_run }
       end
@@ -286,7 +310,7 @@ module ReactManifest
       if @config.dry_run?
         legacy_files.each do |legacy|
           target = File.join(manifest_dir, File.basename(legacy))
-          $stdout.puts "[ReactManifest] DRY-RUN: would move #{legacy} -> #{target}"
+          log_info "DRY-RUN: would move #{legacy} -> #{target}"
         end
         return
       end
@@ -348,8 +372,7 @@ module ReactManifest
       # Build relative to output_dir (configurable) rather than a hardcoded path.
       base = @config.abs_output_dir + File::SEPARATOR
       rel  = abs_path.sub(base, "")
-      # Strip Sprockets-understood extensions: .js.jsx/.jsx/.js -> logical path.
-      rel.sub(/\.js\.jsx$/, "").sub(/\.jsx$/, "").sub(/\.js$/, "")
+      strip_asset_extension(rel)
     end
 
     def extract_defined_symbols(file_path)
@@ -461,7 +484,7 @@ module ReactManifest
     end
 
     def normalize_require_path(path)
-      path.to_s.sub(/\.js\.jsx$/, "").sub(/\.jsx$/, "").sub(/\.js$/, "")
+      strip_asset_extension(path)
     end
 
     def warn_on_external_controller_references(file_path, symbol_to_bundle)
@@ -469,9 +492,9 @@ module ReactManifest
         dep_bundle = symbol_to_bundle[sym]
         next unless dep_bundle
 
-        warn "[ReactManifest] External file '#{relative_require_path(file_path)}' references " \
-             "controller-only symbol '#{sym}' (#{dep_bundle}). " \
-             "Move '#{sym}' to a shared ux dir to avoid duplicate runtime declarations."
+        log_warn "External file '#{relative_require_path(file_path)}' references " \
+                 "controller-only symbol '#{sym}' (#{dep_bundle}). " \
+                 "Move '#{sym}' to a shared ux dir to avoid duplicate runtime declarations."
       end
     end
 
@@ -492,18 +515,18 @@ module ReactManifest
         removed = old_lines - new_lines
         added   = new_lines - old_lines
 
-        removed.each { |l| $stdout.puts "  - #{l.chomp}" }
-        added.each   { |l| $stdout.puts "  + #{l.chomp}" }
+        removed.each { |l| log_info "  - #{l.chomp}" }
+        added.each   { |l| log_info "  + #{l.chomp}" }
       else
-        new_content.each_line { |l| $stdout.puts "  + #{l.chomp}" }
+        new_content.each_line { |l| log_info "  + #{l.chomp}" }
       end
     end
 
     def print_summary(results)
       counts = results.group_by { |r| r[:status] }.transform_values(&:count)
-      $stdout.puts "[ReactManifest] Generated: #{counts[:written] || 0} written, " \
-                   "#{counts[:unchanged] || 0} unchanged, " \
-                   "#{counts[:skipped_pinned] || 0} skipped (not auto-generated)"
+      log_info "Generated: #{counts[:written] || 0} written, " \
+               "#{counts[:unchanged] || 0} unchanged, " \
+               "#{counts[:skipped_pinned] || 0} skipped (not auto-generated)"
     end
   end
   # rubocop:enable Metrics/ClassLength

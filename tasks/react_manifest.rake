@@ -152,26 +152,9 @@ namespace :react_manifest do
 
   desc "Remove all AUTO-GENERATED ux_*.js manifests"
   task clean: :environment do
-    config    = ReactManifest.configuration
-    targets   = [config.abs_manifest_dir, config.abs_output_dir].uniq
-    removed   = 0
-    skipped   = 0
-
-    targets.each do |dir|
-      Dir.glob(File.join(dir, "ux_*.js")).each do |file|
-        first_line = File.foreach(file).first.to_s
-        if first_line.include?("AUTO-GENERATED")
-          File.delete(file)
-          puts "[ReactManifest] Removed: #{file.sub("#{Rails.root}/", '')}"
-          removed += 1
-        else
-          puts "[ReactManifest] Skipped (not auto-generated): #{file.sub("#{Rails.root}/", '')}"
-          skipped += 1
-        end
-      end
-    end
-
-    puts "[ReactManifest] Clean complete: #{removed} removed, #{skipped} skipped"
+    config  = ReactManifest.configuration
+    result  = ReactManifest::Generator.new(config).clean!
+    puts "[ReactManifest] Clean complete: #{result[:removed]} removed, #{result[:skipped]} skipped"
   end
 
   desc "Start the file watcher in the foreground (for debugging)"

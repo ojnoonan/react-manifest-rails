@@ -5,6 +5,8 @@ module ReactManifest
   #
   # No hard-coded dir names — anything that is not app_dir is shared.
   class TreeClassifier
+    include ReactManifest::Logging
+
     Result = Struct.new(:controller_dirs, :shared_dirs, keyword_init: true)
 
     def initialize(config = ReactManifest.configuration)
@@ -16,8 +18,8 @@ module ReactManifest
       shared_dirs     = []
 
       unless Dir.exist?(@config.abs_ux_root)
-        warn "[ReactManifest] ux_root does not exist: #{@config.abs_ux_root}. " \
-             "Create the directory and run `rails react_manifest:generate`."
+        log_warn "ux_root does not exist: #{@config.abs_ux_root}. " \
+                 "Create the directory and run `rails react_manifest:generate`."
         return Result.new(controller_dirs: [], shared_dirs: [])
       end
 
@@ -40,7 +42,7 @@ module ReactManifest
                 }
               end
             rescue Errno::EACCES => e
-              warn "[ReactManifest] Permission denied reading #{full_path}: #{e.message}"
+              log_warn "Permission denied reading #{full_path}: #{e.message}"
             end
           else
             shared_dirs << {
@@ -50,7 +52,7 @@ module ReactManifest
           end
         end
       rescue Errno::EACCES => e
-        warn "[ReactManifest] Permission denied reading ux_root #{@config.abs_ux_root}: #{e.message}"
+        log_warn "Permission denied reading ux_root #{@config.abs_ux_root}: #{e.message}"
         return Result.new(controller_dirs: [], shared_dirs: [])
       end
 
