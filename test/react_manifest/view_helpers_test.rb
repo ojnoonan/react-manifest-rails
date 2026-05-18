@@ -64,7 +64,11 @@ class ReactManifestModuleTest < ReactManifestTest
 
     assert_equal 1, call_count
   ensure
-    ReactManifest::TreeClassifier.singleton_class.remove_method(:new) rescue nil
+    begin
+      ReactManifest::TreeClassifier.singleton_class.remove_method(:new)
+    rescue StandardError
+      nil
+    end
   end
 
   def test_tree_classifier_reruns_after_reset
@@ -82,7 +86,11 @@ class ReactManifestModuleTest < ReactManifestTest
 
     assert_equal 2, call_count
   ensure
-    ReactManifest::TreeClassifier.singleton_class.remove_method(:new) rescue nil
+    begin
+      ReactManifest::TreeClassifier.singleton_class.remove_method(:new)
+    rescue StandardError
+      nil
+    end
   end
 
   # --- resolve_bundles ---

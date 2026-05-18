@@ -1,5 +1,6 @@
 require "test_helper"
 
+# rubocop:disable Metrics/ClassLength
 class ScannerTest < ReactManifestTest
   def setup
     super
@@ -43,7 +44,7 @@ class ScannerTest < ReactManifestTest
 
   def test_warns_when_duplicate_shared_symbols_are_defined
     result = @scanner.scan(classification)
-    assert result.warnings.any? { |w| w.include?("Duplicate symbol 'PrimaryButton'") }
+    assert(result.warnings.any? { |w| w.include?("Duplicate symbol 'PrimaryButton'") })
   end
 
   def test_logs_symbol_count_via_rails_logger_debug_when_verbose
@@ -57,43 +58,43 @@ class ScannerTest < ReactManifestTest
   def test_notifications_controller_detects_use_fetch_usage
     result = @scanner.scan(classification)
     notif_usage = result.controller_usages["notifications"]
-    assert notif_usage.any? { |f| f.include?("use_fetch") }
+    assert(notif_usage.any? { |f| f.include?("use_fetch") })
   end
 
   def test_notifications_controller_detects_primary_button_jsx_element
     result = @scanner.scan(classification)
     notif_usage = result.controller_usages["notifications"]
-    assert notif_usage.any? { |f| f.include?("primary_button") }
+    assert(notif_usage.any? { |f| f.include?("primary_button") })
   end
 
   def test_notifications_controller_detects_use_modal_hook
     result = @scanner.scan(classification)
     notif_usage = result.controller_usages["notifications"]
-    assert notif_usage.any? { |f| f.include?("use_modal") }
+    assert(notif_usage.any? { |f| f.include?("use_modal") })
   end
 
   def test_users_controller_detects_text_input_jsx_element
     result = @scanner.scan(classification)
     users_usage = result.controller_usages["users"]
-    assert users_usage.any? { |f| f.include?("text_input") }
+    assert(users_usage.any? { |f| f.include?("text_input") })
   end
 
   def test_users_controller_detects_primary_button_jsx_element
     result = @scanner.scan(classification)
     users_usage = result.controller_usages["users"]
-    assert users_usage.any? { |f| f.include?("primary_button") }
+    assert(users_usage.any? { |f| f.include?("primary_button") })
   end
 
   def test_products_controller_detects_es_module_component_usage
     result = @scanner.scan(classification)
     products_usage = result.controller_usages["products"]
-    assert products_usage.any? { |f| f.include?("status_badge") }
+    assert(products_usage.any? { |f| f.include?("status_badge") })
   end
 
   def test_products_controller_detects_es_module_hook_usage
     result = @scanner.scan(classification)
     products_usage = result.controller_usages["products"]
-    assert products_usage.any? { |f| f.include?("use_prefetch") }
+    assert(products_usage.any? { |f| f.include?("use_prefetch") })
   end
 
   def test_usage_lists_are_sorted
@@ -107,13 +108,13 @@ class ScannerTest < ReactManifestTest
 
   def test_warns_when_shared_file_is_used_by_many_controllers
     result = @scanner.scan(classification)
-    assert result.warnings.any? { |w| w.include?("High fan-out") && w.include?("primary_button") }
+    assert(result.warnings.any? { |w| w.include?("High fan-out") && w.include?("primary_button") })
   end
 
   def test_detects_component_referenced_as_bare_token_in_ternary
     result = @scanner.scan(classification)
     products_usage = result.controller_usages["products"]
-    assert products_usage.any? { |f| f.include?("icon_button") }
+    assert(products_usage.any? { |f| f.include?("icon_button") })
   end
 
   def test_warns_when_shared_file_references_controller_specific_symbol
@@ -128,7 +129,7 @@ class ScannerTest < ReactManifestTest
                "const UsersIndex = () => <div />;\n")
 
     result = @scanner.scan(classification)
-    assert result.warnings.any? { |w| w.include?("Shared file") && w.include?("UsersIndex") }
+    assert(result.warnings.any? { |w| w.include?("Shared file") && w.include?("UsersIndex") })
   end
 
   def test_populates_shared_violations_with_structured_data
@@ -156,7 +157,7 @@ class ScannerTest < ReactManifestTest
                "const GoodShared = () => <PrimaryButton />;\n")
 
     result = @scanner.scan(classification)
-    assert result.warnings.none? { |w| w.include?("GoodShared") }
+    assert(result.warnings.none? { |w| w.include?("GoodShared") })
   end
 
   def test_does_not_flag_locally_defined_symbols_in_shared_files
@@ -170,7 +171,7 @@ class ScannerTest < ReactManifestTest
     File.write(ctrl_dir.join("users_index.js"), "const UsersIndex = () => <div />;\n")
 
     result = @scanner.scan(classification)
-    assert result.warnings.none? { |w| w.include?("WidgetHelper") }
+    assert(result.warnings.none? { |w| w.include?("WidgetHelper") })
   end
 
   # --- Token-based symbol detection ---
@@ -182,7 +183,7 @@ class ScannerTest < ReactManifestTest
                "const search = new PrimaryButton({ fields: ['name'] });\n")
 
     result = @scanner.scan(classification)
-    assert result.controller_usages["users"].any? { |f| f.include?("primary_button") }
+    assert(result.controller_usages["users"].any? { |f| f.include?("primary_button") })
   end
 
   def test_detects_component_passed_as_bare_function_argument
@@ -191,7 +192,7 @@ class ScannerTest < ReactManifestTest
     File.write(ctrl_dir.join("users_arg.js"), "render(PrimaryButton);\n")
 
     result = @scanner.scan(classification)
-    assert result.controller_usages["users"].any? { |f| f.include?("primary_button") }
+    assert(result.controller_usages["users"].any? { |f| f.include?("primary_button") })
   end
 
   def test_detects_component_assigned_to_variable
@@ -200,7 +201,7 @@ class ScannerTest < ReactManifestTest
     File.write(ctrl_dir.join("users_assign.js"), "const C = PrimaryButton;\n")
 
     result = @scanner.scan(classification)
-    assert result.controller_usages["users"].any? { |f| f.include?("primary_button") }
+    assert(result.controller_usages["users"].any? { |f| f.include?("primary_button") })
   end
 
   def test_detects_hook_called_without_jsx_context
@@ -209,7 +210,7 @@ class ScannerTest < ReactManifestTest
     File.write(ctrl_dir.join("users_hook.js"), "const data = useFetch('/api');\n")
 
     result = @scanner.scan(classification)
-    assert result.controller_usages["users"].any? { |f| f.include?("use_fetch") }
+    assert(result.controller_usages["users"].any? { |f| f.include?("use_fetch") })
   end
 
   # --- external_providers ---
@@ -270,7 +271,7 @@ class ScannerTest < ReactManifestTest
     ReactManifest.configure { |c| c.external_roots = [ext_dir.to_s] }
 
     result = @scanner.scan(classification)
-    assert result.controller_usages["users"].any? { |f| f.include?("fancy_widget") }
+    assert(result.controller_usages["users"].any? { |f| f.include?("fancy_widget") })
   end
 
   def test_warns_when_external_root_file_references_controller_only_symbol
@@ -284,8 +285,8 @@ class ScannerTest < ReactManifestTest
     result = @scanner.scan(classification)
 
     refute_empty result.external_violations
-    assert result.warnings.any? { |w| w.include?("External file 'components/navbar/top_nav'") }
-    assert result.warnings.any? { |w| w.include?("uses app-dir symbol 'UsersIndex'") }
+    assert(result.warnings.any? { |w| w.include?("External file 'components/navbar/top_nav'") })
+    assert(result.warnings.any? { |w| w.include?("uses app-dir symbol 'UsersIndex'") })
   end
 
   # --- error handling ---
@@ -297,16 +298,19 @@ class ScannerTest < ReactManifestTest
 
     original_read = File.method(:read)
     File.define_singleton_method(:read) do |path, *args, **opts|
-      if path == victim && opts == { encoding: "utf-8" }
-        raise Errno::ENOENT, "No such file"
-      end
+      raise Errno::ENOENT, "No such file" if path == victim && opts == { encoding: "utf-8" }
+
       original_read.call(path, *args, **opts)
     end
 
     result = @scanner.scan(classification)
-    assert result.warnings.any? { |w| w.include?(File.basename(victim)) }
+    assert(result.warnings.any? { |w| w.include?(File.basename(victim)) })
   ensure
-    File.singleton_class.remove_method(:read) rescue nil
+    begin
+      File.singleton_class.remove_method(:read)
+    rescue StandardError
+      nil
+    end
   end
 
   def test_warns_and_skips_controller_file_with_permission_error
@@ -316,16 +320,19 @@ class ScannerTest < ReactManifestTest
 
     original_read = File.method(:read)
     File.define_singleton_method(:read) do |path, *args, **opts|
-      if path == victim && opts == { encoding: "utf-8" }
-        raise Errno::EACCES, "Permission denied"
-      end
+      raise Errno::EACCES, "Permission denied" if path == victim && opts == { encoding: "utf-8" }
+
       original_read.call(path, *args, **opts)
     end
 
     result = @scanner.scan(classification)
-    assert result.warnings.any? { |w| w.include?(File.basename(victim)) }
+    assert(result.warnings.any? { |w| w.include?(File.basename(victim)) })
   ensure
-    File.singleton_class.remove_method(:read) rescue nil
+    begin
+      File.singleton_class.remove_method(:read)
+    rescue StandardError
+      nil
+    end
   end
 
   def test_warns_and_skips_non_utf8_controller_file
@@ -335,16 +342,19 @@ class ScannerTest < ReactManifestTest
 
     original_read = File.method(:read)
     File.define_singleton_method(:read) do |path, *args, **opts|
-      if path == victim && opts == { encoding: "utf-8" }
-        raise Encoding::InvalidByteSequenceError, "invalid byte"
-      end
+      raise Encoding::InvalidByteSequenceError, "invalid byte" if path == victim && opts == { encoding: "utf-8" }
+
       original_read.call(path, *args, **opts)
     end
 
     result = @scanner.scan(classification)
-    assert result.warnings.any? { |w| w.include?(File.basename(victim)) }
+    assert(result.warnings.any? { |w| w.include?(File.basename(victim)) })
   ensure
-    File.singleton_class.remove_method(:read) rescue nil
+    begin
+      File.singleton_class.remove_method(:read)
+    rescue StandardError
+      nil
+    end
   end
 
   def test_returns_empty_symbols_for_unreadable_shared_file
@@ -352,16 +362,19 @@ class ScannerTest < ReactManifestTest
 
     original_read = File.method(:read)
     File.define_singleton_method(:read) do |path, *args, **opts|
-      if path == shared_file && opts == { encoding: "utf-8" }
-        raise Errno::EACCES, "Permission denied"
-      end
+      raise Errno::EACCES, "Permission denied" if path == shared_file && opts == { encoding: "utf-8" }
+
       original_read.call(path, *args, **opts)
     end
 
     result = @scanner.scan(classification)
     assert_kind_of ReactManifest::Scanner::Result, result
   ensure
-    File.singleton_class.remove_method(:read) rescue nil
+    begin
+      File.singleton_class.remove_method(:read)
+    rescue StandardError
+      nil
+    end
   end
 
   def test_does_not_crash_on_invalid_empty_js_content
@@ -390,7 +403,11 @@ class ScannerTest < ReactManifestTest
       assert_equal 1, count, "Expected #{ctrl[:path]} traversed once, got #{count}"
     end
   ensure
-    @scanner.singleton_class.remove_method(:js_files_in) rescue nil
+    begin
+      @scanner.singleton_class.remove_method(:js_files_in)
+    rescue StandardError
+      nil
+    end
   end
 
   def test_does_not_re_read_shared_files_during_violation_detection
@@ -408,7 +425,11 @@ class ScannerTest < ReactManifestTest
       assert_equal 1, count, "Expected #{file} to be read once, got #{count}"
     end
   ensure
-    File.singleton_class.remove_method(:read) rescue nil
+    begin
+      File.singleton_class.remove_method(:read)
+    rescue StandardError
+      nil
+    end
   end
 
   # --- symbol index caching ---
@@ -454,7 +475,11 @@ class ScannerTest < ReactManifestTest
 
     assert_equal 1, rescanned.size
   ensure
-    @scanner.singleton_class.remove_method(:parse_definitions) rescue nil
+    begin
+      @scanner.singleton_class.remove_method(:parse_definitions)
+    rescue StandardError
+      nil
+    end
   end
 
   def test_produces_same_symbol_index_after_partial_cache_invalidation
@@ -487,3 +512,4 @@ class ScannerTest < ReactManifestTest
     assert_equal "ux/components/tsx_card", result.symbol_index["TsxCard"]
   end
 end
+# rubocop:enable Metrics/ClassLength

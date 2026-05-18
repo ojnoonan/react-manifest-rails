@@ -147,7 +147,7 @@ class LayoutPatcherTest < ReactManifestTest
 
   def test_dry_run_mode_does_not_modify_any_layout_file
     originals = {
-      "application.html.erb"  => read_layout("application.html.erb"),
+      "application.html.erb" => read_layout("application.html.erb"),
       "application.html.haml" => read_layout("application.html.haml")
     }
     ReactManifest.configure { |c| c.dry_run = true }

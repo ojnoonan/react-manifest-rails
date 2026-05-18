@@ -1,5 +1,6 @@
 require "test_helper"
 
+# rubocop:disable Metrics/ClassLength
 class GeneratorRunTest < ReactManifestTest
   def setup
     super
@@ -131,7 +132,10 @@ class GeneratorRunTest < ReactManifestTest
 
     info_calls = []
     $stdout.stubs(:puts)
-    Rails.logger.stubs(:info).with { |msg| info_calls << msg; true }
+    Rails.logger.stubs(:info).with do |msg|
+      info_calls << msg
+      true
+    end
 
     ReactManifest::Generator.new(@config).run!
 
@@ -168,11 +172,16 @@ class GeneratorRunTest < ReactManifestTest
     original_foreach = File.method(:foreach)
     File.define_singleton_method(:foreach) do |f, *args, **opts, &blk|
       raise Errno::EACCES, "Permission denied" if f == path
+
       original_foreach.call(f, *args, **opts, &blk)
     end
     refute @generator.send(:auto_generated?, path)
   ensure
-    File.singleton_class.remove_method(:foreach) rescue nil
+    begin
+      File.singleton_class.remove_method(:foreach)
+    rescue StandardError
+      nil
+    end
   end
 
   def test_cleans_up_temp_file_when_atomic_write_fails
@@ -271,12 +280,15 @@ class GeneratorRunTest < ReactManifestTest
 
     warn_calls = []
     $stdout.stubs(:puts)
-    Rails.logger.stubs(:warn).with { |msg| warn_calls << msg; true }
+    Rails.logger.stubs(:warn).with do |msg|
+      warn_calls << msg
+      true
+    end
     @generator.run!
 
-    assert warn_calls.any? { |m|
+    assert(warn_calls.any? do |m|
       m.include?("External file 'components/navbar/top_nav' references controller-only symbol 'UsersIndex'")
-    }
+    end)
   end
 
   # TypeScript extension handling (no pre-run setup dependency needed, but present here)
@@ -363,6 +375,11 @@ class GeneratorCleanTest < ReactManifestTest
 
     @generator.clean!
   ensure
-    File.singleton_class.remove_method(:foreach) rescue nil
+    begin
+      File.singleton_class.remove_method(:foreach)
+    rescue StandardError
+      nil
+    end
   end
 end
+# rubocop:enable Metrics/ClassLength

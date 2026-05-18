@@ -37,11 +37,11 @@ Gem::Specification.new do |spec|
   spec.add_dependency "railties", ">= 7.0", "< 9"
 
   # Development dependencies
+  spec.add_development_dependency "minitest", "~> 5.0"
+  spec.add_development_dependency "mocha", "~> 2.0"
   spec.add_development_dependency "rails", ">= 7.0", "< 9"
   spec.add_development_dependency "rake"
   spec.add_development_dependency "sprockets-rails"
-  spec.add_development_dependency "minitest",      "~> 5.0"
-  spec.add_development_dependency "mocha",         "~> 2.0"
   # listen is a soft runtime dependency (file watching in development).
   # The gem gracefully degrades without it; add to your app's Gemfile:
   #   gem "listen", "~> 3.0", group: :development

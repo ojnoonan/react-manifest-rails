@@ -26,7 +26,7 @@ class ApplicationAnalyzerTest < ReactManifestTest
     result = @analyzer.analyze.find { |r| r.file.end_with?("application.js") }
     ux_lines = result.ux_code_lines
     refute_empty ux_lines
-    assert ux_lines.any? { |l| l.directive.include?("tree") }
+    assert(ux_lines.any? { |l| l.directive.include?("tree") })
   end
 
   def test_application_js_is_not_clean_because_it_has_ux_code

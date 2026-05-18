@@ -39,7 +39,7 @@ class ConfigurationTest < ReactManifestTest
     assert_includes @config.exclude_paths, "react"
   end
 
-  def test_default_size_threshold_kb_is_500
+  def test_default_size_threshold_kb_is_five_hundred
     assert_equal 500, @config.size_threshold_kb
   end
 
