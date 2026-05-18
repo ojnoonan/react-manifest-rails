@@ -1,16 +1,16 @@
 require "simplecov"
-require "set"
 SimpleCov.start do
   add_filter "/spec/"
   add_filter "/test/"
 end
 
+require "minitest/autorun"
+require "mocha/minitest"
 require "fileutils"
 require "tmpdir"
 require "pathname"
+require "set"
 
-# Stand up a minimal Rails-like environment for unit tests
-# (without loading the full Rails stack)
 module FakeRails
   class FakeRoot
     attr_reader :path
@@ -78,14 +78,11 @@ module FakeRails
   end
 end
 
-# Stub Rails constant for unit tests
 Rails = FakeRails unless defined?(Rails)
 
-# Load the gem without the Railtie; lib/react_manifest.rb does not require it.
 $LOAD_PATH.unshift File.expand_path("../lib", __dir__)
 require "react_manifest"
 
-# Shared fixture helpers
 module FixtureHelpers
   FIXTURE_UX_ROOT = File.expand_path("fixtures/dummy/app/assets/javascripts/ux", __dir__)
   FIXTURE_JS_ROOT = File.expand_path("fixtures/dummy/app/assets/javascripts", __dir__)
@@ -111,7 +108,6 @@ module FixtureHelpers
   end
 
   def copy_fixtures_to(tmpdir)
-    # Copy all fixture app/ subdirs (assets/javascripts, views, etc.) into tmpdir
     src_app = File.expand_path("fixtures/dummy/app", __dir__)
     dst_app = File.join(tmpdir, "app")
     FileUtils.mkdir_p(dst_app)
@@ -121,26 +117,18 @@ module FixtureHelpers
   end
 end
 
-RSpec.configure do |config|
-  config.include FixtureHelpers
+class ReactManifestTest < Minitest::Test
+  include FixtureHelpers
 
-  config.before(:each) do
+  def setup
+    @tmpdir = Dir.mktmpdir("react_manifest_test")
+    Rails.root = @tmpdir
+    copy_fixtures_to(@tmpdir)
+    fixture_config(@tmpdir)
+  end
+
+  def teardown
+    FileUtils.rm_rf(@tmpdir)
     ReactManifest.reset!
   end
-
-  config.expect_with :rspec do |expectations|
-    expectations.include_chain_clauses_in_custom_matcher_descriptions = true
-  end
-
-  config.mock_with :rspec do |mocks|
-    mocks.verify_partial_doubles = true
-  end
-
-  config.shared_context_metadata_behavior = :apply_to_host_groups
-  config.filter_run_when_matching :focus
-  config.filter_run_excluding :stress
-  config.disable_monkey_patching!
-  config.warnings = true
-  config.order = :random
-  Kernel.srand config.seed
 end
