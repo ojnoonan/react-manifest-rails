@@ -6,6 +6,7 @@ require "react_manifest/logging"
 require "react_manifest/configuration"
 require "react_manifest/path_utils"
 require "react_manifest/tree_classifier"
+require "react_manifest/symbol_extractor"
 require "react_manifest/scanner"
 require "react_manifest/dependency_map"
 require "react_manifest/generator"
@@ -186,33 +187,14 @@ module ReactManifest
 
     def extract_defined_symbols(file_path)
       content = File.read(file_path, encoding: "utf-8")
-      symbols = []
-      ReactManifest::Scanner::DEFINITION_PATTERNS.each do |pattern|
-        content.scan(pattern) { |m| symbols << m[0] }
-      end
-      symbols.uniq
+      SymbolExtractor.extract_definitions(content)
     rescue Errno::ENOENT, Errno::EACCES, Encoding::InvalidByteSequenceError
       []
     end
 
     def extract_used_component_symbols(file_path)
       content = File.read(file_path, encoding: "utf-8")
-
-      # Collect locally-defined symbols to avoid self-reference false positives
-      local_syms = Set.new
-      ReactManifest::Scanner::DEFINITION_PATTERNS.each do |pattern|
-        content.scan(pattern) { |m| local_syms << m[0] }
-      end
-
-      symbols = []
-      content.scan(ReactManifest::Scanner::PASCAL_TOKEN_PATTERN) do |m|
-        symbols << m[0] unless local_syms.include?(m[0])
-      end
-      content.scan(ReactManifest::Scanner::HOOK_TOKEN_PATTERN) do |m|
-        symbols << m[0] unless local_syms.include?(m[0])
-      end
-
-      symbols.uniq
+      SymbolExtractor.extract_usages(content)
     rescue Errno::ENOENT, Errno::EACCES, Encoding::InvalidByteSequenceError
       []
     end
