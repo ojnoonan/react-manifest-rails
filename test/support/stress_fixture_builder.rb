@@ -18,8 +18,8 @@ module StressFixtureBuilder
   # Builds N controller dirs under ux/app/, each with `files_per_controller` source files.
   # Also creates a small set of shared components that controller files reference.
   def self.build_flat(tmpdir, controller_count: 100, files_per_controller: 3)
-    shared_dir  = File.join(tmpdir, UX_ROOT, "components")
-    app_dir     = File.join(tmpdir, UX_ROOT, "app")
+    shared_dir = File.join(tmpdir, UX_ROOT, "components")
+    app_dir    = File.join(tmpdir, UX_ROOT, "app")
     FileUtils.mkdir_p(shared_dir)
     FileUtils.mkdir_p(app_dir)
 

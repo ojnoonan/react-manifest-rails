@@ -22,7 +22,7 @@ jobs:
         bundler-cache: true
 
     - name: Run tests
-      run: bundle exec rake spec
+      run: bundle exec rake test
 
   publish:
     needs: test

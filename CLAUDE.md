@@ -6,9 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 # Tests
-bundle exec rspec                          # full suite
-bundle exec rspec spec/react_manifest/generator_spec.rb   # single file
-bundle exec rspec spec/react_manifest/generator_spec.rb:27 # single example
+bundle exec rake test                                           # full suite
+bundle exec rake test TEST=test/react_manifest/generator_test.rb  # single file
+bundle exec rake test:stress                                    # stress tests
 
 # Linting
 bundle exec rubocop --parallel
@@ -71,9 +71,9 @@ TreeClassifier → Scanner → Generator
 
 ### Testing
 
-Tests use a minimal FakeRails stub (defined in `spec/spec_helper.rb`) instead of loading the full Rails stack. Fixture files live in `spec/fixtures/dummy/app/assets/javascripts/ux/`. Each spec wraps examples in `with_temp_rails_root { }` which copies fixtures to a tmpdir and points `Rails.root` there.
+Tests use a minimal FakeRails stub (defined in `test/test_helper.rb`) instead of loading the full Rails stack. Fixture files live in `test/fixtures/dummy/app/assets/javascripts/ux/`. Each test wraps examples in `with_temp_rails_root { }` which copies fixtures to a tmpdir and points `Rails.root` there.
 
-The `ReactManifest` module (including `resolve_bundles` and `controller_candidates`) is redefined inline in `spec_helper.rb` for isolation — the production version lives in `lib/react_manifest.rb`.
+The `ReactManifest` module (including `resolve_bundles` and `controller_candidates`) is redefined inline in `test_helper.rb` for isolation — the production version lives in `lib/react_manifest.rb`.
 
 ### Key constraints
 
