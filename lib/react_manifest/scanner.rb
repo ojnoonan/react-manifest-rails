@@ -150,14 +150,8 @@ module ReactManifest
 
       Dir.glob(File.join(dir, "**", @config.extensions_glob))
          .reject { |f| File.directory?(f) }
-         .reject { |f| excluded_path?(f) }
+         .reject { |f| @config.excluded_path?(f) }
          .sort
-    end
-
-    # Returns true if the file path contains a segment matching any exclude_path.
-    def excluded_path?(abs_path)
-      parts = abs_path.split(File::SEPARATOR)
-      @config.exclude_paths.any? { |ep| parts.include?(ep) }
     end
 
     def extract_definitions(file_path)

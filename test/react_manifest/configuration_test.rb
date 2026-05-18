@@ -152,4 +152,24 @@ class ConfigurationTest < ReactManifestTest
     @config.external_roots = ["app/assets/javascripts/vendor_components"]
     assert_equal ["app/assets/javascripts/vendor_components"], @config.external_roots
   end
+
+  def test_excluded_path_true_when_segment_matches
+    @config.exclude_paths = ["vendor"]
+    assert @config.excluded_path?("/app/assets/ux/vendor/foo.js")
+  end
+
+  def test_excluded_path_false_when_only_prefix_matches
+    @config.exclude_paths = ["vendor"]
+    refute @config.excluded_path?("/app/assets/ux/vendor_custom/foo.js")
+  end
+
+  def test_excluded_path_false_when_no_segment_matches
+    @config.exclude_paths = ["vendor"]
+    refute @config.excluded_path?("/app/assets/ux/components/foo.js")
+  end
+
+  def test_excluded_path_false_when_exclude_paths_empty
+    @config.exclude_paths = []
+    refute @config.excluded_path?("/app/assets/ux/vendor/foo.js")
+  end
 end

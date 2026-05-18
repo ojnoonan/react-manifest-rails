@@ -344,7 +344,7 @@ module ReactManifest
       files = Dir.glob(File.join(dir, "**", @config.extensions_glob))
                  .reject { |f| File.directory?(f) }
                  .reject { |f| auto_generated?(f) }
-                 .reject { |f| excluded_path?(f) }
+                 .reject { |f| @config.excluded_path?(f) }
                  .sort
 
       # Deduplicate by logical require path: if both foo.js and foo.jsx exist,
@@ -358,14 +358,6 @@ module ReactManifest
         seen << logical
         uniq << f
       end
-    end
-
-    # Returns true if the file path contains a component matching any exclude_path.
-    # exclude_paths are matched against individual path segments, so "vendor" matches
-    # ux/vendor/foo.js but not ux/vendor_custom/foo.js.
-    def excluded_path?(abs_path)
-      parts = abs_path.split(File::SEPARATOR)
-      @config.exclude_paths.any? { |ep| parts.include?(ep) }
     end
 
     def relative_require_path(abs_path)
@@ -398,7 +390,7 @@ module ReactManifest
 
       Dir.glob(File.join(dir, "**", @config.extensions_glob))
          .reject { |f| File.directory?(f) }
-         .reject { |f| excluded_path?(f) }
+         .reject { |f| @config.excluded_path?(f) }
          .sort
     end
 

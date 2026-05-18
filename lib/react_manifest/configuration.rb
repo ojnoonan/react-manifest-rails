@@ -135,6 +135,11 @@ module ReactManifest
       File.join(abs_output_dir, subdir)
     end
 
+    def excluded_path?(abs_path)
+      parts = abs_path.split(File::SEPARATOR)
+      exclude_paths.any? { |ep| parts.include?(ep) }
+    end
+
     def normalized_manifest_subdir
       manifest_subdir.to_s.gsub(%r{\A/+|/+\z}, "")
     end
