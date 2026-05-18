@@ -1,6 +1,36 @@
 require "spec_helper"
 
 RSpec.describe ReactManifest do
+  describe "component_maps memoization" do
+    around(:each) do |example|
+      with_temp_rails_root do |tmpdir|
+        copy_fixtures_to(tmpdir)
+        fixture_config(tmpdir)
+        ReactManifest::Generator.new(ReactManifest.configuration).run!
+        example.run
+      end
+    end
+
+    it "runs TreeClassifier only once for multiple resolve_bundles_for_component_direct calls" do
+      allow(ReactManifest::TreeClassifier).to receive(:new).and_call_original
+
+      10.times { described_class.resolve_bundles_for_component_direct("UsersIndex") }
+
+      expect(ReactManifest::TreeClassifier).to have_received(:new).exactly(1).times
+    end
+
+    it "re-runs TreeClassifier after reset!" do
+      allow(ReactManifest::TreeClassifier).to receive(:new).and_call_original
+
+      described_class.resolve_bundles_for_component_direct("UsersIndex")
+      described_class.reset!
+      fixture_config(Rails.root)
+      described_class.resolve_bundles_for_component_direct("UsersIndex")
+
+      expect(ReactManifest::TreeClassifier).to have_received(:new).exactly(2).times
+    end
+  end
+
   describe ".resolve_bundles" do
     around(:each) do |example|
       with_temp_rails_root do |tmpdir|

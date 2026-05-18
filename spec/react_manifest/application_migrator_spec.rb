@@ -98,5 +98,24 @@ RSpec.describe ReactManifest::ApplicationMigrator do
         expect(app_result[:status]).to eq(:already_clean)
       end
     end
+
+    context "when File.rename raises during write" do
+      it "leaves the original file unchanged" do
+        original = File.read(app_js_path, encoding: "utf-8")
+        allow(File).to receive(:rename).and_raise(Errno::ENOSPC, "No space left on device")
+
+        expect { migrator.migrate! }.to raise_error(Errno::ENOSPC)
+
+        expect(File.read(app_js_path, encoding: "utf-8")).to eq(original)
+      end
+
+      it "does not leave a tmp file behind" do
+        allow(File).to receive(:rename).and_raise(Errno::ENOSPC, "No space left on device")
+
+        expect { migrator.migrate! }.to raise_error(Errno::ENOSPC)
+
+        expect(Dir.glob("#{app_js_path}.tmp.*")).to be_empty
+      end
+    end
   end
 end

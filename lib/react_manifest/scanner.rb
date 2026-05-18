@@ -1,3 +1,5 @@
+require_relative "path_utils"
+
 module ReactManifest
   # Scans JS/JSX (and optionally TS/TSX) files using regex — no AST, no Node.js required.
   #
@@ -16,6 +18,9 @@ module ReactManifest
   # Phase 3 — emits non-fatal warnings.
   # rubocop:disable Metrics/ClassLength
   class Scanner
+    include PathUtils
+    include ReactManifest::Logging
+
     # Patterns to detect symbol definitions (CommonJS and ES module style)
     DEFINITION_PATTERNS = [
       # CommonJS / variable-assignment style
@@ -56,23 +61,44 @@ module ReactManifest
     Result = Struct.new(:symbol_index, :controller_usages, :warnings, :shared_violations,
                         :external_violations, keyword_init: true)
 
+    class << self
+      def file_symbol_cache
+        @file_symbol_cache ||= {}
+      end
+
+      def clear_cache!
+        @file_symbol_cache = {}
+      end
+
+      def invalidate(file_path)
+        file_symbol_cache.delete(file_path)
+      end
+    end
+
     def initialize(config = ReactManifest.configuration)
       @config = config
     end
 
-    # rubocop:disable Metrics/MethodLength,Metrics/AbcSize,Metrics/PerceivedComplexity
+    # rubocop:disable Metrics/MethodLength,Metrics/AbcSize
     def scan(classification)
       warnings      = Set.new
       symbol_index  = {}
       external_file_paths = {} # file_path => relative_require_path for external_roots files
 
-      # Phase 1a: index symbols from shared dirs
-      shared_file_paths = {} # file_path => relative_require_path for all shared files
+      # Phase 1a: index symbols from shared dirs; cache content for violation detection
+      shared_file_paths = {}    # file_path => relative_require_path
+      shared_file_content = {}  # file_path => raw content string
       classification.shared_dirs.each do |shared_dir|
         js_files_in(shared_dir[:path]).each do |file_path|
           relative = relative_require_path(file_path)
           shared_file_paths[file_path] = relative
-          symbols = extract_definitions(file_path)
+          content = begin
+            File.read(file_path, encoding: "utf-8")
+          rescue Errno::ENOENT, Errno::EACCES, Encoding::InvalidByteSequenceError
+            nil
+          end
+          shared_file_content[file_path] = content
+          symbols = extract_definitions_from(file_path, content)
           symbols.each do |sym|
             if symbol_index.key?(sym)
               warnings.add("Duplicate symbol '#{sym}' in #{relative} (already from #{symbol_index[sym]})")
@@ -101,31 +127,15 @@ module ReactManifest
         symbol_index[sym] = require_path
       end
 
-      # Phase 1d: build controller (app-dir) symbol index for violation detection
+      log_debug "Shared symbol index: #{symbol_index.size} symbols indexed" if @config.verbose?
+
+      # Phase 2: single pass over controller dirs — build violation index AND detect usages
       controller_symbol_index = {}
-      classification.controller_dirs.each do |ctrl|
-        js_files_in(ctrl[:path]).each do |file_path|
-          extract_definitions(file_path).each do |sym|
-            controller_symbol_index[sym] ||= {
-              file: relative_require_path(file_path),
-              controller: ctrl[:name]
-            }
-          end
-        end
-      end
-
-      $stdout.puts "[ReactManifest] Shared symbol index: #{symbol_index.size} symbols indexed" if @config.verbose?
-
-      # Phase 1e: detect shared files that use app-dir (controller) symbols
-      shared_violations = detect_shared_violations(shared_file_paths, controller_symbol_index, warnings)
-      external_violations = detect_external_root_violations(external_file_paths, controller_symbol_index, warnings)
-
-      # Phase 2: scan controller dirs for usage
       controller_usages = {}
 
       classification.controller_dirs.each do |ctrl|
-        files   = js_files_in(ctrl[:path])
-        used    = Set.new
+        files = js_files_in(ctrl[:path])
+        used  = Set.new
 
         warnings.add("Controller dir '#{ctrl[:name]}' has no JS/JSX files") if files.empty? && @config.verbose?
 
@@ -133,13 +143,25 @@ module ReactManifest
           content = read_controller_file(file_path, warnings)
           next unless content
 
+          extract_definitions_from(file_path, content).each do |sym|
+            controller_symbol_index[sym] ||= {
+              file: relative_require_path(file_path),
+              controller: ctrl[:name]
+            }
+          end
+
           used.merge(extract_used_shared_paths(content, symbol_index))
         end
 
         controller_usages[ctrl[:name]] = used.to_a.sort
       end
 
-      # Phase 3: additional warnings
+      # Phase 3a: detect shared/external files that use app-dir (controller) symbols
+      shared_violations = detect_shared_violations(shared_file_paths, shared_file_content, controller_symbol_index,
+                                                   warnings)
+      external_violations = detect_external_root_violations(external_file_paths, controller_symbol_index, warnings)
+
+      # Phase 3b: additional warnings
       emit_fanout_warnings(controller_usages, warnings)
 
       Result.new(
@@ -150,7 +172,7 @@ module ReactManifest
         external_violations: external_violations
       )
     end
-    # rubocop:enable Metrics/MethodLength,Metrics/AbcSize,Metrics/PerceivedComplexity
+    # rubocop:enable Metrics/MethodLength,Metrics/AbcSize
 
     private
 
@@ -170,11 +192,32 @@ module ReactManifest
     end
 
     def extract_definitions(file_path)
+      cache = self.class.file_symbol_cache
+      return cache[file_path] if cache.key?(file_path)
+
+      cache[file_path] = scan_file_definitions(file_path)
+    end
+
+    # Like extract_definitions but uses pre-read content, populating the cache as a side-effect.
+    def extract_definitions_from(file_path, content)
+      cache = self.class.file_symbol_cache
+      return cache[file_path] if cache.key?(file_path)
+
+      cache[file_path] = parse_definitions(content)
+    end
+
+    def scan_file_definitions(file_path)
       begin
         content = File.read(file_path, encoding: "utf-8")
       rescue Errno::ENOENT, Errno::EACCES, Encoding::InvalidByteSequenceError
         return []
       end
+      parse_definitions(content)
+    end
+
+    def parse_definitions(content)
+      return [] unless content
+
       symbols = []
       DEFINITION_PATTERNS.each do |pattern|
         content.scan(pattern) { |m| symbols << m[0] }
@@ -186,18 +229,14 @@ module ReactManifest
       # Build relative to output_dir (configurable) rather than a hardcoded path.
       base = @config.abs_output_dir + File::SEPARATOR
       rel  = abs_path.sub(base, "")
-      # Strip Sprockets-understood extensions: .js.jsx/.jsx/.js -> logical path.
-      rel.sub(/\.js\.jsx$/, "").sub(/\.jsx$/, "").sub(/\.js$/, "")
+      strip_asset_extension(rel)
     end
 
-    def detect_shared_violations(shared_file_paths, controller_symbol_index, warnings)
+    def detect_shared_violations(shared_file_paths, shared_file_content, controller_symbol_index, warnings)
       violations = []
       shared_file_paths.each do |file_path, relative|
-        content = begin
-          File.read(file_path, encoding: "utf-8")
-        rescue Errno::ENOENT, Errno::EACCES, Encoding::InvalidByteSequenceError
-          next
-        end
+        content = shared_file_content[file_path]
+        next unless content
 
         local_syms = Set.new
         DEFINITION_PATTERNS.each { |p| content.scan(p) { |m| local_syms << m[0] } }
@@ -312,26 +351,6 @@ module ReactManifest
       end
 
       used
-    end
-
-    def scan_component_usage(content, pattern, symbol_index, used)
-      content.scan(pattern) do |match|
-        sym = match[0]
-        next unless symbol_index.key?(sym)
-
-        used << symbol_index[sym]
-      end
-    end
-
-    def scan_array_component_usage(content, symbol_index, used)
-      content.scan(ARRAY_COMPONENT_LIST_PATTERN) do |match|
-        list = match[0]
-        list.split(/\s*,\s*/).each do |sym|
-          next unless symbol_index.key?(sym)
-
-          used << symbol_index[sym]
-        end
-      end
     end
 
     def abs_external_root(path)

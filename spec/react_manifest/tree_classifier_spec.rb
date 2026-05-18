@@ -60,6 +60,13 @@ RSpec.describe ReactManifest::TreeClassifier do
       expect(result.controller_dirs).to be_empty
       expect(result.shared_dirs).to be_empty
     end
+
+    it "logs via Rails.logger.warn (not kernel warn) when ux_root does not exist" do
+      ReactManifest.configure { |c| c.ux_root = "app/assets/javascripts/nonexistent" }
+      allow(Rails.logger).to receive(:warn)
+      classifier.classify
+      expect(Rails.logger).to have_received(:warn).with(a_string_including("ux_root does not exist"))
+    end
   end
 
   describe "#watched_dirs" do

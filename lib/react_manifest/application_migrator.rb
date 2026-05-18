@@ -8,6 +8,8 @@ module ReactManifest
   #   - Never removes :vendor or :passthrough lines
   #   - Adds a managed-by comment at the top
   class ApplicationMigrator
+    include ReactManifest::Logging
+
     MANAGED_COMMENT = <<~JS.freeze
       // Non-UX libraries — loaded on every page.
       // React app code is now served per-controller via react_bundle_tag.
@@ -30,13 +32,13 @@ module ReactManifest
       results = @analyzer.analyze
 
       if results.empty?
-        $stdout.puts "[ReactManifest] No application*.js files found to migrate."
+        log_info "No application*.js files found to migrate."
         return []
       end
 
       results.map do |result|
         if result.clean?
-          $stdout.puts "[ReactManifest] #{short(result.file)} — already clean, skipping."
+          log_info "#{short(result.file)} — already clean, skipping."
           { file: result.file, status: :already_clean }
         else
           rewrite(result)
@@ -51,7 +53,7 @@ module ReactManifest
       new_content = build_new_content(result)
 
       if @config.dry_run?
-        $stdout.puts "\n[ReactManifest] DRY-RUN: #{short(file)}"
+        log_info "DRY-RUN: #{short(file)}"
         print_diff(file, new_content)
         return { file: file, status: :dry_run }
       end
@@ -61,15 +63,22 @@ module ReactManifest
       begin
         FileUtils.cp(file, bak_path)
         File.chmod(0o600, bak_path)
-        $stdout.puts "[ReactManifest] Backup: #{short(bak_path)}"
+        log_info "Backup: #{short(bak_path)}"
       rescue StandardError => e
-        $stdout.puts "[ReactManifest] ERROR: Could not create backup of #{short(file)}: #{e.message}"
-        $stdout.puts "[ReactManifest] Migration aborted for #{short(file)} — original file unchanged."
+        log_warn "ERROR: Could not create backup of #{short(file)}: #{e.message}"
+        log_warn "Migration aborted for #{short(file)} — original file unchanged."
         return { file: file, status: :backup_failed, error: e.message }
       end
 
-      File.write(file, new_content, encoding: "utf-8")
-      $stdout.puts "[ReactManifest] Migrated: #{short(file)}"
+      tmp = "#{file}.tmp.#{Process.pid}"
+      begin
+        File.write(tmp, new_content, encoding: "utf-8")
+        File.rename(tmp, file)
+      rescue StandardError => e
+        FileUtils.rm_f(tmp)
+        raise e
+      end
+      log_info "Migrated: #{short(file)}"
 
       { file: file, status: :migrated, backup: bak_path }
     end
@@ -120,8 +129,8 @@ module ReactManifest
       removed = old_lines - new_lines
       added   = new_lines - old_lines
 
-      removed.each { |l| $stdout.puts "  - #{l}" }
-      added.each   { |l| $stdout.puts "  + #{l}" }
+      removed.each { |l| log_info "  - #{l}" }
+      added.each   { |l| log_info "  + #{l}" }
     end
 
     def short(path)

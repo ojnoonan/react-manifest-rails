@@ -144,6 +144,17 @@ RSpec.describe ReactManifest::Generator do
           described_class.new(config).run!
         end.not_to(change { Dir.glob(File.join(output_dir, "ux_notifications.js")).any? })
       end
+
+      it "logs dry-run notice via Rails.logger instead of $stdout.puts" do
+        ReactManifest.configure { |c| c.dry_run = true }
+        FileUtils.rm_f(File.join(output_dir, "ux_notifications.js"))
+        allow(Rails.logger).to receive(:info)
+
+        described_class.new(config).run!
+
+        expect(Rails.logger).to have_received(:info).with(a_string_including("DRY-RUN"))
+        expect(Rails.logger).to have_received(:info).with(a_string_including("ux_notifications"))
+      end
     end
 
     describe "pinned file protection" do
@@ -303,13 +314,92 @@ RSpec.describe ReactManifest::Generator do
           c.external_roots = [ext_dir.to_s]
         end
 
-        allow(generator).to receive(:warn)
+        allow(Rails.logger).to receive(:warn)
         generator.run!
 
-        expect(generator).to have_received(:warn).with(
+        expect(Rails.logger).to have_received(:warn).with(
           include("External file 'components/navbar/top_nav' references controller-only symbol 'UsersIndex'")
         )
       end
+    end
+  end
+
+  describe "TypeScript extension handling" do
+    before do
+      ReactManifest.configure do |c|
+        c.extensions = %w[js jsx ts tsx]
+      end
+    end
+
+    it "emits a clean require path for a .ts shared file" do
+      components_dir = Rails.root.join("app", "assets", "javascripts", "ux", "components")
+      FileUtils.mkdir_p(components_dir)
+      File.write(components_dir.join("ts_widget.ts"), "export const TsWidget = () => {};\n")
+
+      ctrl_dir = Rails.root.join("app", "assets", "javascripts", "ux", "app", "users")
+      FileUtils.mkdir_p(ctrl_dir)
+      File.write(ctrl_dir.join("users_index.tsx"), "const UsersIndex = () => <TsWidget />;\n")
+
+      generator.run!
+
+      shared_content = read_manifest("ux_shared.js")
+      expect(shared_content).to include("//= require ux/components/ts_widget")
+      expect(shared_content).not_to include("ts_widget.ts")
+    end
+
+    it "emits a clean require path for a .tsx shared file" do
+      components_dir = Rails.root.join("app", "assets", "javascripts", "ux", "components")
+      FileUtils.mkdir_p(components_dir)
+      File.write(components_dir.join("tsx_button.tsx"), "export const TsxButton = () => <button />;\n")
+
+      ctrl_dir = Rails.root.join("app", "assets", "javascripts", "ux", "app", "users")
+      FileUtils.mkdir_p(ctrl_dir)
+      File.write(ctrl_dir.join("users_index.tsx"), "const UsersIndex = () => <TsxButton />;\n")
+
+      generator.run!
+
+      shared_content = read_manifest("ux_shared.js")
+      expect(shared_content).to include("//= require ux/components/tsx_button")
+      expect(shared_content).not_to include("tsx_button.tsx")
+    end
+  end
+
+  describe "#clean!" do
+    let(:manifest_dir) { config.abs_manifest_dir }
+
+    before { FileUtils.mkdir_p(manifest_dir) }
+
+    it "removes auto-generated manifests and returns the count" do
+      File.write(File.join(manifest_dir, "ux_users.js"),
+                 "// AUTO-GENERATED — DO NOT EDIT\n//= require ux/shared\n")
+
+      result = generator.clean!
+
+      expect(File.exist?(File.join(manifest_dir, "ux_users.js"))).to be false
+      expect(result[:removed]).to eq(1)
+      expect(result[:skipped]).to eq(0)
+    end
+
+    it "skips non-auto-generated files" do
+      File.write(File.join(manifest_dir, "ux_pinned.js"), "//= require my_custom_thing\n")
+
+      result = generator.clean!
+
+      expect(File.exist?(File.join(manifest_dir, "ux_pinned.js"))).to be true
+      expect(result[:removed]).to eq(0)
+      expect(result[:skipped]).to eq(1)
+    end
+
+    it "does not raise when a file disappears between glob and read" do
+      path = File.join(manifest_dir, "ux_vanishing.js")
+      File.write(path, "// AUTO-GENERATED — DO NOT EDIT\n")
+
+      allow(File).to receive(:foreach).and_wrap_original do |orig, f, *args, **kwargs, &blk|
+        File.delete(path) if f == path
+        orig.call(f, *args, **kwargs, &blk)
+      end
+
+      expect { generator.clean! }.not_to raise_error
     end
   end
 end

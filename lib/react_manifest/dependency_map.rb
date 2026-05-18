@@ -9,6 +9,8 @@ module ReactManifest
   #   map.shared_files_for("users")      # => ["ux/components/...", ...]
   #   map.controllers_using("ux/lib/api_helpers") # => ["users", "admin"]
   class DependencyMap
+    include ReactManifest::Logging
+
     attr_reader :symbol_index, :controller_usages, :warnings
 
     def initialize(scan_result)
@@ -40,29 +42,29 @@ module ReactManifest
 
     # Pretty-print for the analyze rake task
     def print_report
-      puts "\n=== ReactManifest Dependency Analysis ===\n\n"
+      log_info "\n=== ReactManifest Dependency Analysis ===\n\n"
 
-      puts "Shared Symbol Index (#{@symbol_index.size} symbols):"
+      log_info "Shared Symbol Index (#{@symbol_index.size} symbols):"
       @symbol_index.each do |sym, file|
         # Strip non-printable/control characters to prevent terminal manipulation
         safe_sym  = sym.gsub(/[^\x20-\x7E]/, "?")
         safe_file = file.gsub(/[^\x20-\x7E]/, "?")
-        puts "  #{safe_sym.ljust(40)} #{safe_file}"
+        log_info "  #{safe_sym.ljust(40)} #{safe_file}"
       end
 
-      puts "\nPer-Controller Usage:"
+      log_info "\nPer-Controller Usage:"
       @controller_usages.each do |ctrl, files|
-        puts "\n  [#{ctrl}] (#{files.size} shared references)"
-        files.each { |f| puts "    #{f}" }
-        puts "    (none)" if files.empty?
+        log_info "\n  [#{ctrl}] (#{files.size} shared references)"
+        files.each { |f| log_info "    #{f}" }
+        log_info "    (none)" if files.empty?
       end
 
       unless @warnings.empty?
-        puts "\nWarnings (#{@warnings.size}):"
-        @warnings.each { |w| puts "  ⚠  #{w}" }
+        log_info "\nWarnings (#{@warnings.size}):"
+        @warnings.each { |w| log_warn "  ⚠  #{w}" }
       end
 
-      puts "\n"
+      log_info "\n"
     end
   end
 end
