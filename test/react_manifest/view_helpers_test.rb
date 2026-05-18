@@ -93,6 +93,41 @@ class ReactManifestModuleTest < ReactManifestTest
     end
   end
 
+  # --- component_maps cache key invalidation ---
+
+  def test_extensions_mutation_without_reset_reflects_newly_scanned_component
+    tsx_dir = Rails.root.join("app/assets/javascripts/ux/app/users")
+    File.write(tsx_dir.join("users_ts_component.tsx"),
+               "var UsersTsComponent = function() { return React.createElement('div'); };")
+
+    ReactManifest.resolve_bundles_for_component_direct("UsersIndex")
+
+    ReactManifest.configure { |c| c.extensions = %w[js jsx ts tsx] }
+
+    bundles = ReactManifest.resolve_bundles_for_component_direct("UsersTsComponent")
+    assert_equal %w[ux_manifests/ux_shared ux_manifests/ux_users], bundles
+  end
+
+  def test_always_include_mutation_without_reset_is_reflected_in_resolve_bundles
+    ReactManifest.resolve_bundles_for_component_direct("UsersIndex")
+
+    main_path = File.join(@config.abs_manifest_dir, "ux_main.js")
+    File.write(main_path, "// AUTO-GENERATED\n//= require ux_shared\n")
+    ReactManifest.configure { |c| c.always_include = ["ux_main"] }
+
+    bundles = ReactManifest.resolve_bundles("users")
+    assert_includes bundles, "ux_manifests/ux_main"
+  end
+
+  def test_exclude_paths_mutation_without_reset_does_not_break_component_resolution
+    ReactManifest.resolve_bundles_for_component_direct("UsersIndex")
+
+    ReactManifest.configure { |c| c.exclude_paths = %w[react react_dev vendor custom_exclude] }
+
+    bundles = ReactManifest.resolve_bundles_for_component_direct("UsersIndex")
+    assert_equal %w[ux_manifests/ux_shared ux_manifests/ux_users], bundles
+  end
+
   # --- resolve_bundles ---
 
   def test_resolve_bundles_includes_controller_specific_bundle_when_it_exists

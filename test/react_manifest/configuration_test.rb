@@ -172,4 +172,20 @@ class ConfigurationTest < ReactManifestTest
     @config.exclude_paths = []
     refute @config.excluded_path?("/app/assets/ux/vendor/foo.js")
   end
+
+  def test_cache_key_is_stable_on_unchanged_config
+    assert_equal @config.cache_key, @config.cache_key
+  end
+
+  def test_cache_key_changes_after_always_include_mutation
+    before = @config.cache_key
+    @config.always_include = ["ux_main"]
+    refute_equal before, @config.cache_key
+  end
+
+  def test_cache_key_changes_after_exclude_paths_mutation
+    before = @config.cache_key
+    @config.exclude_paths = []
+    refute_equal before, @config.cache_key
+  end
 end

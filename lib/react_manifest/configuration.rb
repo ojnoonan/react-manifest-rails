@@ -143,5 +143,9 @@ module ReactManifest
     def normalized_manifest_subdir
       manifest_subdir.to_s.gsub(%r{\A/+|/+\z}, "")
     end
+
+    def cache_key
+      [ux_root, app_dir, extensions, always_include, exclude_paths, external_providers].hash
+    end
   end
 end

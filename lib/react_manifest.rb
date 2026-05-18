@@ -138,7 +138,11 @@ module ReactManifest
     end
 
     def component_maps(config)
-      return @component_maps_cache if @component_maps_cache
+      key = config.cache_key
+      if @component_maps_cache
+        cached_key, cached_maps = @component_maps_cache
+        return cached_maps if cached_key == key
+      end
 
       controller_dirs = TreeClassifier.new(config).classify.controller_dirs
       symbol_to_bundle = {}
@@ -171,10 +175,12 @@ module ReactManifest
         end
       end
 
-      @component_maps_cache = {
+      maps = {
         symbol_to_bundle: symbol_to_bundle,
         bundle_dependencies: bundle_dependencies
       }
+      @component_maps_cache = [key, maps]
+      maps
     end
 
     def js_files_in_controller(dir, config)
