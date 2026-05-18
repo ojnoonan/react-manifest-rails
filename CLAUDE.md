@@ -47,21 +47,25 @@ TreeClassifier → Scanner → Generator
                          ↘ DependencyMap (reporting only)
 ```
 
+Both Scanner and Generator delegate all JS symbol work to `SymbolExtractor`.
+
 1. **`TreeClassifier`** (`tree_classifier.rb`) — walks `ux_root` and produces two lists: `shared_dirs` (anything not under `app_dir`) and `controller_dirs` (immediate subdirs of `app_dir`). Uses `File.realpath` to follow symlinks.
 
-2. **`Scanner`** (`scanner.rb`) — Phase 1: regex-indexes exported symbols from shared dirs into a `symbol_index` (`"PrimaryButton" → "ux/components/…"`). Phase 2: scans controller files for usages (JSX tags, hook calls, lib calls) and maps them to the shared files they reference. Supports both CommonJS-style and ES module (`export default`, `export const`) definitions.
+2. **`Scanner`** (`scanner.rb`) — Phase 1: regex-indexes exported symbols from shared dirs into a `symbol_index` (`"PrimaryButton" → "ux/components/…"`). Phase 2: scans controller files for usages (JSX tags, hook calls, lib calls) and maps them to the shared files they reference. Delegates all symbol extraction to `SymbolExtractor`; calls `config.excluded_path?` for path filtering.
 
-3. **`Generator`** (`generator.rb`) — builds all manifest content in memory first (`build_shared`, `build_controller`), then writes atomically (temp file + rename) so no partial state is left on failure. Skips files without the `AUTO-GENERATED` header (user-pinned). Idempotent via SHA-256 digest comparison.
+3. **`Generator`** (`generator.rb`) — builds all manifest content in memory first (`build_shared`, `build_controller`), then writes atomically (temp file + rename) so no partial state is left on failure. Skips files without the `AUTO-GENERATED` header (user-pinned). Idempotent via SHA-256 digest comparison. Delegates symbol extraction to `SymbolExtractor`; calls `config.excluded_path?` for path filtering.
 
-4. **`Configuration`** (`configuration.rb`) — single config object. Key options: `ux_root`, `app_dir`, `output_dir`, `extensions` (`%w[js jsx]` by default; add `ts tsx` for TypeScript), `shared_bundle`, `always_include`, `exclude_paths`, `dry_run`, `verbose`.
+4. **`Configuration`** (`configuration.rb`) — single config object. Key options: `ux_root`, `app_dir`, `output_dir`, `extensions` (`%w[js jsx]` by default; add `ts tsx` for TypeScript), `shared_bundle`, `always_include`, `exclude_paths`, `dry_run`, `verbose`. Provides `excluded_path?(abs_path)` (shared predicate used by Scanner and Generator) and `cache_key` (hash over the six fields that affect component maps, used to auto-invalidate `@component_maps_cache` on mutation).
 
-5. **`Watcher`** (`watcher.rb`) — wraps the `listen` gem (soft dependency; silently disabled if absent). Started by the Railtie in development. Uses `config.extensions_pattern` for the file filter regex.
+5. **`SymbolExtractor`** (`symbol_extractor.rb`) — `module_function` module with two methods: `extract_definitions(content)` returns all PascalCase/hook symbols defined in a JS/JSX string; `extract_usages(content)` returns all external symbols referenced (filters out locally-defined names and `JS_BUILTINS`). Single source of truth for all regex patterns and builtins. Called by Scanner, Generator, and `ReactManifest.resolve_bundles_for_component_direct`.
 
-6. **`ViewHelpers`** / **`ReactManifest.resolve_bundles`** (`lib/react_manifest.rb`) — `react_bundle_tag` in views calls `resolve_bundles(controller_path)`, which checks disk for matching `ux_*.js` files. Namespace fallback: `admin/reports/summary` tries `ux_admin_reports_summary`, `ux_admin_reports`, `ux_admin`, then `ux_summary` (leaf segment).
+6. **`Watcher`** (`watcher.rb`) — wraps the `listen` gem (soft dependency; silently disabled if absent). Started by the Railtie in development. Uses `config.extensions_pattern` for the file filter regex.
 
-7. **`ApplicationAnalyzer` / `ApplicationMigrator`** — one-time tools for migrating an existing monolithic `application.js`. Analyzer classifies each `//= require` line; Migrator rewrites the file (with `.bak` at `chmod 0600`).
+7. **`ViewHelpers`** / **`ReactManifest.resolve_bundles`** (`lib/react_manifest.rb`) — `react_bundle_tag` in views calls `resolve_bundles(controller_path)`, which checks disk for matching `ux_*.js` files. Namespace fallback: `admin/reports/summary` tries `ux_admin_reports_summary`, `ux_admin_reports`, `ux_admin`, then `ux_summary` (leaf segment).
 
-8. **`DependencyMap`** (`dependency_map.rb`) — read-only view over scan results. Maintains an inverted index for O(1) `controllers_using(file)` lookups. Used by `react_manifest:analyze`.
+8. **`ApplicationAnalyzer` / `ApplicationMigrator`** — one-time tools for migrating an existing monolithic `application.js`. Analyzer classifies each `//= require` line; Migrator rewrites the file (with `.bak` at `chmod 0600`).
+
+9. **`DependencyMap`** (`dependency_map.rb`) — read-only view over scan results. Maintains an inverted index for O(1) `controllers_using(file)` lookups. Used by `react_manifest:analyze`.
 
 ### Railtie hooks
 
