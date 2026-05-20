@@ -7,6 +7,11 @@ module ReactManifest
   #
   # Watches ux_root recursively so newly added controller directories are
   # picked up without a server restart.
+  #
+  # File-change callbacks are debounced by the listen gem and handled on a
+  # background thread. Rapid back-to-back changes are coalesced: if a
+  # regeneration is already in progress when a new change arrives, only one
+  # additional regeneration is queued (not one per file event).
   module Watcher
     DEBOUNCE_SECONDS = 0.3
 
@@ -29,6 +34,8 @@ module ReactManifest
           return
         end
 
+        @regen_mutex = Mutex.new
+
         log_info "Watching #{root.sub("#{Rails.root}/", '')} for changes..."
 
         @listener = Listen.to(
@@ -47,17 +54,58 @@ module ReactManifest
       def stop
         @listener&.stop
         @listener = nil
+        @regen_thread&.join(5)
+        @regen_thread = nil
       end
 
       def running?
         !@listener.nil?
       end
 
+      # Kill the background regen thread and reset all regen state.
+      # Intended for use in tests only.
+      def reset_regen_state!
+        thread = @regen_thread
+        if thread&.alive?
+          thread.kill
+          thread.join(1)
+        end
+        @regen_thread  = nil
+        @regen_pending = false
+        @regen_mutex   = nil
+      end
+
       private
 
       def handle_file_changes(modified, added, removed, config)
         (modified + added + removed).each { |f| Scanner.invalidate(f) }
-        regenerate!(config)
+        schedule_regeneration(config)
+      end
+
+      # Schedule a regeneration on the background thread. Coalesces rapid
+      # back-to-back file events: if the regen thread is already running,
+      # we just set @regen_pending and return immediately so the listen
+      # callback is never blocked.
+      def schedule_regeneration(config)
+        @regen_mutex ||= Mutex.new
+        mutex = @regen_mutex
+        mutex.synchronize do
+          @regen_pending = true
+          return if @regen_thread&.alive?
+
+          @regen_thread = Thread.new { regen_loop(config, mutex) }
+        end
+      end
+
+      # Background thread: regenerate, then check whether another change
+      # arrived while we were busy. If so, regenerate again; otherwise exit.
+      def regen_loop(config, mutex)
+        loop do
+          mutex.synchronize { @regen_pending = false }
+          regenerate!(config)
+          still_pending = mutex.synchronize { @regen_pending }
+          break unless still_pending
+        end
       end
 
       def regenerate!(config)
