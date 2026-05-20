@@ -47,4 +47,31 @@ class LoggingTest < Minitest::Test
     $stdout.expects(:puts).with("[ReactManifest] uh oh")
     @host.log_warn("uh oh")
   end
+
+  def test_log_info_does_not_write_to_stdout_in_rails_console_mode
+    ReactManifest.configure { |c| c.stdout_logging = true }
+    FakeRails.const_set(:Console, Class.new)
+    $stdout.expects(:puts).never
+    @host.log_info("started")
+  ensure
+    FakeRails.send(:remove_const, :Console) if FakeRails.const_defined?(:Console)
+  end
+
+  def test_log_debug_does_not_write_to_stdout_in_rails_console_mode
+    ReactManifest.configure { |c| c.stdout_logging = true }
+    FakeRails.const_set(:Console, Class.new)
+    $stdout.expects(:puts).never
+    @host.log_debug("verbose detail")
+  ensure
+    FakeRails.send(:remove_const, :Console) if FakeRails.const_defined?(:Console)
+  end
+
+  def test_log_warn_does_not_write_to_stdout_in_rails_console_mode
+    ReactManifest.configure { |c| c.stdout_logging = true }
+    FakeRails.const_set(:Console, Class.new)
+    $stdout.expects(:puts).never
+    @host.log_warn("uh oh")
+  ensure
+    FakeRails.send(:remove_const, :Console) if FakeRails.const_defined?(:Console)
+  end
 end
