@@ -46,9 +46,7 @@ module ReactManifest
     # written and others stale/missing.
     def run!
       classification = @classifier.classify
-      scan_result = Scanner.new(@config).scan(classification)
-      controller_context = build_controller_context(classification.controller_dirs, classification.shared_dirs,
-                                                    scan_result)
+      controller_context = build_controller_context(classification.controller_dirs)
 
       # Phase 1: build all content in memory — no I/O.
       shared_manifest = build_shared(classification.shared_dirs)
@@ -129,25 +127,14 @@ module ReactManifest
       { filename: "#{ctrl[:bundle_name]}.js", content: "#{lines.join("\n")}\n" }
     end
 
-    # rubocop:disable Metrics/AbcSize
-    def build_controller_context(controller_dirs, shared_dirs, scan_result)
+    def build_controller_context(controller_dirs)
       bundle_files = {}
       symbol_to_bundle = {}
       external_symbol_to_require = {}
       dependencies = Hash.new { |h, k| h[k] = Set.new }
       external_requires = Hash.new { |h, k| h[k] = Set.new }
-      shared_require_paths = shared_require_path_set(shared_dirs)
-      shared_requires = Hash.new { |h, k| h[k] = Set.new }
-      shared_dependency_map = build_shared_dependency_map(shared_dirs, shared_require_paths, scan_result)
-      shared_lib_requires = shared_lib_require_paths(shared_dirs)
 
       controller_dirs.each do |ctrl|
-        scan_result.controller_usages.fetch(ctrl[:name], []).each do |req_path|
-          shared_requires[ctrl[:bundle_name]] << req_path
-        end
-        shared_requires[ctrl[:bundle_name]] = expand_shared_requires(shared_requires[ctrl[:bundle_name]],
-                                                                     shared_dependency_map)
-
         # Index controller-defined symbols for cross-app detection
         bundle_name = ctrl[:bundle_name]
         files = js_files_in(ctrl[:path])
@@ -200,12 +187,9 @@ module ReactManifest
         bundle_files: bundle_files,
         dependencies: dependencies,
         always_include_requires: always_include_requires,
-        shared_lib_requires: shared_lib_requires,
-        shared_requires: shared_requires,
         external_requires: external_requires
       }
     end
-    # rubocop:enable Metrics/AbcSize
 
     def controller_dependency_requires(bundle_name, controller_context)
       deps = transitive_dependencies(bundle_name, controller_context[:dependencies])
@@ -398,66 +382,6 @@ module ReactManifest
       return path if Pathname.new(path).absolute?
 
       Rails.root.join(path).to_s
-    end
-
-    def shared_require_path_set(shared_dirs)
-      shared_dirs.each_with_object(Set.new) do |shared_dir, paths|
-        js_files_in(shared_dir[:path]).each do |file_path|
-          paths << normalize_require_path(relative_require_path(file_path))
-        end
-      end
-    end
-
-    def shared_lib_require_paths(shared_dirs)
-      shared_dirs.each_with_object([]) do |shared_dir, paths|
-        next unless File.basename(shared_dir[:path]) == "lib"
-
-        js_files_in(shared_dir[:path]).each do |file_path|
-          paths << normalize_require_path(relative_require_path(file_path))
-        end
-      end.sort.uniq
-    end
-
-    def build_shared_dependency_map(shared_dirs, shared_require_paths, scan_result)
-      dependency_map = Hash.new { |h, k| h[k] = Set.new }
-
-      shared_symbol_index = scan_result.symbol_index.each_with_object({}) do |(sym, req_path), index|
-        normalized = normalize_require_path(req_path)
-        next unless shared_require_paths.include?(normalized)
-
-        index[sym] = normalized
-      end
-
-      shared_dirs.each do |shared_dir|
-        js_files_in(shared_dir[:path]).each do |file_path|
-          from_req = normalize_require_path(relative_require_path(file_path))
-          extract_used_component_symbols(file_path).each do |sym|
-            to_req = shared_symbol_index[sym]
-            next if to_req.nil? || to_req == from_req
-
-            dependency_map[from_req] << to_req
-          end
-        end
-      end
-
-      dependency_map
-    end
-
-    def expand_shared_requires(initial_requires, dependency_map)
-      expanded = Set.new(initial_requires)
-      queue = initial_requires.to_a
-
-      until queue.empty?
-        req = queue.shift
-        dependency_map.fetch(req, Set.new).each do |dep_req|
-          next if expanded.include?(dep_req)
-
-          expanded << dep_req
-          queue << dep_req
-        end
-      end
-
-      expanded
     end
 
     def normalize_require_path(path)
