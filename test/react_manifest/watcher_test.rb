@@ -38,4 +38,20 @@ class WatcherTest < ReactManifestTest
     generator.expects(:run!)
     ReactManifest::Watcher.send(:handle_file_changes, ["/any/file.js"], [], [], @config)
   end
+
+  def test_does_not_log_when_all_manifests_are_unchanged
+    generator = mock("generator")
+    ReactManifest::Generator.stubs(:new).returns(generator)
+    generator.stubs(:run!).returns([{ status: :unchanged }, { status: :unchanged }])
+    Rails.logger.expects(:info).never
+    ReactManifest::Watcher.send(:regenerate!, @config)
+  end
+
+  def test_logs_written_count_when_manifests_are_written
+    generator = mock("generator")
+    ReactManifest::Generator.stubs(:new).returns(generator)
+    generator.stubs(:run!).returns([{ status: :written }, { status: :unchanged }])
+    Rails.logger.expects(:info).with("[ReactManifest] 1 manifest(s) written")
+    ReactManifest::Watcher.send(:regenerate!, @config)
+  end
 end

@@ -61,8 +61,9 @@ module ReactManifest
       end
 
       def regenerate!(config)
-        Generator.new(config).run!
-        log_info "Manifests regenerated"
+        results = Generator.new(config).run!
+        written = results.count { |r| r[:status] == :written }
+        log_info "#{written} manifest(s) written" if written.positive?
       rescue StandardError => e
         log_warn "Error during regeneration: #{e.message}"
         log_debug e.backtrace.first(5).join("\n") if config.verbose?
