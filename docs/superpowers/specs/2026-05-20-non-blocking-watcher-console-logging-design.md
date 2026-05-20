@@ -13,6 +13,8 @@ Three related issues reported in development:
 
 3. **Duplicate log lines in Rails console.** `Rails.logger` in console mode is already routed to `$stdout`. The Logging mixin additionally calls `$stdout.puts` for the same message, so every line appears twice.
 
+4. **Spurious output on no-op changes.** When a file changes but no manifests need rewriting (all results are `:unchanged`), the watcher still logs "Manifests regenerated". No output should be emitted when nothing changed.
+
 ## Root causes
 
 | Issue | Root cause |
@@ -20,6 +22,7 @@ Three related issues reported in development:
 | Blocking | `Watcher#regenerate!` called directly on the listen callback thread |
 | Console interference | `$stdout.puts` called from background thread; conflicts with Reline cursor |
 | Duplicates | `Rails.logger` + `$stdout.puts` both write to `$stdout` in console mode |
+| Spurious output | `regenerate!` always logs "Manifests regenerated" regardless of whether any file was written |
 
 ## Design
 
@@ -51,6 +54,8 @@ regen_loop(config):
 ```
 
 The spawned thread loops until no pending flag is set, then exits. `schedule_regeneration` only spawns a new thread when the previous one has exited.
+
+**No-op silence:** `regenerate!` inspects the results array returned by `Generator#run!`. It only logs when at least one manifest was written (`status: :written`). If all results are `:unchanged` or `:skipped_pinned`, nothing is logged — neither to `Rails.logger` nor to `$stdout`.
 
 **Shutdown:** `Watcher.stop` gains `@regen_thread&.join(5)` (5-second timeout) so an in-flight regeneration is allowed to finish before the process exits cleanly.
 
@@ -95,3 +100,4 @@ $stdout.puts(full) if ReactManifest.configuration.stdout_logging? && !rails_cons
 - Existing watcher specs should still pass with the threading change (generation result is the same).
 - Add a spec for `Watcher` that verifies: when `handle_file_changes` is called twice in rapid succession while regeneration is slow, exactly two generations occur (first + one coalesced follow-up), not three or more.
 - Add a spec for `Logging` that verifies `$stdout` is not written when `Rails::Console` is defined.
+- Add a spec for `Watcher#regenerate!` that verifies no log output is emitted when all generator results are `:unchanged`.
