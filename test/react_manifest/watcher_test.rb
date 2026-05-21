@@ -82,29 +82,59 @@ class WatcherTest < ReactManifestTest
     assert call_count >= 1, "Expected generator to be called at least once, got #{call_count}"
   end
 
-  def test_schedule_regeneration_coalesces_rapid_changes
-    # Back-to-back changes must not stack up unlimited regenerations.
-    # We allow at most 2 runs: one for the in-flight regen, one more if
-    # @regen_pending was set while the first was running.
+  def test_coalesces_second_change_that_arrives_during_active_regeneration
     call_count = 0
+    started  = Queue.new  # regen signals when it has entered the stub
+    proceed  = Queue.new  # test signals when the stub may return
+
     stub_regenerate! do |_config|
+      started.push(true)
+      proceed.pop
       call_count += 1
-      sleep 0.05  # simulate work so subsequent changes arrive mid-run
     end
     ReactManifest::Scanner.stubs(:invalidate)
 
-    # Fire three rapid change events
-    3.times do
-      ReactManifest::Watcher.send(:handle_file_changes, ["/any/file.js"], [], [], @config)
+    # First change — spawns thread, which immediately blocks waiting for proceed
+    ReactManifest::Watcher.send(:handle_file_changes, ["/f1.js"], [], [], @config)
+    started.pop  # wait until regeneration has actually started
+
+    # Second change arrives while first is still running — sets the pending flag
+    ReactManifest::Watcher.send(:handle_file_changes, ["/f2.js"], [], [], @config)
+
+    # Unblock first run; regen_loop detects pending and starts a second run
+    proceed.push(true)
+    started.pop   # wait for the coalesced second run to begin
+    proceed.push(true)  # unblock it
+
+    join_regen_thread
+    assert_equal 2, call_count, "Expected exactly 2 regenerations: initial + one coalesced follow-up"
+  end
+
+  def test_stop_waits_for_in_flight_regeneration_to_complete
+    finished = false
+    started  = Queue.new
+
+    stub_regenerate! do |_config|
+      started.push(true)
+      sleep 0.05  # simulate slow work
+      finished = true
     end
+    ReactManifest::Scanner.stubs(:invalidate)
 
-    join_regen_thread(timeout: 3)
+    ReactManifest::Watcher.send(:handle_file_changes, ["/f.js"], [], [], @config)
+    started.pop  # ensure regeneration is actually running before calling stop
 
-    # Coalescing means at most 2 runs (one in-flight + one pending), never 3
-    assert call_count <= 2,
-           "Expected at most 2 regenerations due to coalescing, got #{call_count}"
-    assert call_count >= 1,
-           "Expected at least 1 regeneration, got #{call_count}"
+    ReactManifest::Watcher.stop  # must block until the thread finishes
+
+    assert finished, "stop should wait for in-flight regeneration to complete"
+  end
+
+  def test_regenerate_rescues_generator_errors_and_logs_a_warning
+    ReactManifest::Generator.stubs(:new).raises(RuntimeError, "disk full")
+    Rails.logger.expects(:warn).with("[ReactManifest] Error during regeneration: disk full")
+
+    # Call regenerate! directly — tests the rescue path without threading complexity
+    ReactManifest::Watcher.send(:regenerate!, @config)
   end
 
   def test_schedule_regeneration_does_not_block_caller
