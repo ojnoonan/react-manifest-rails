@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    react-manifest-rails (0.2.28)
+    react-manifest-rails (0.2.29)
       railties (>= 7.0, < 9)
 
 GEM
