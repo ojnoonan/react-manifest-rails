@@ -16,9 +16,17 @@ class WatcherTest < ReactManifestTest
     # original implementation if it somehow wakes after teardown.
     if @stubbed_regenerate
       orig = @original_regenerate
-      Warning[:performance] = false if Warning.respond_to?(:[]=)
+      begin
+        Warning[:performance] = false if Warning.respond_to?(:[]=)
+      rescue ArgumentError
+        nil
+      end
       ReactManifest::Watcher.define_singleton_method(:regenerate!, &orig)
-      Warning[:performance] = true if Warning.respond_to?(:[]=)
+      begin
+        Warning[:performance] = true if Warning.respond_to?(:[]=)
+      rescue ArgumentError
+        nil
+      end
     end
     ReactManifest::Watcher.reset_regen_state!
     super
@@ -39,9 +47,17 @@ class WatcherTest < ReactManifestTest
   # Patch regenerate! at the singleton level (works cross-thread unlike mocha).
   def stub_regenerate!(&block)
     @stubbed_regenerate = true
-    Warning[:performance] = false if Warning.respond_to?(:[]=)
+    begin
+      Warning[:performance] = false if Warning.respond_to?(:[]=)
+    rescue ArgumentError
+      nil
+    end
     ReactManifest::Watcher.define_singleton_method(:regenerate!, &block)
-    Warning[:performance] = true if Warning.respond_to?(:[]=)
+    begin
+      Warning[:performance] = true if Warning.respond_to?(:[]=)
+    rescue ArgumentError
+      nil
+    end
   end
 
   def test_routes_log_messages_through_rails_logger_debug
@@ -124,7 +140,7 @@ class WatcherTest < ReactManifestTest
     ReactManifest::Watcher.send(:handle_file_changes, ["/f.js"], [], [], @config)
     started.pop  # ensure regeneration is actually running before calling stop
 
-    ReactManifest::Watcher.stop  # must block until the thread finishes
+    ReactManifest::Watcher.stop # must block until the thread finishes
 
     assert finished, "stop should wait for in-flight regeneration to complete"
   end
