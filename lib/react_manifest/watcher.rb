@@ -14,6 +14,7 @@ module ReactManifest
   # additional regeneration is queued (not one per file event).
   module Watcher
     DEBOUNCE_SECONDS = 0.3
+    BRANCH_SWITCH_COOLDOWN = 3
 
     class << self
       include ReactManifest::Logging
@@ -35,6 +36,9 @@ module ReactManifest
         end
 
         @regen_mutex = Mutex.new
+        @git_dir = detect_git_dir
+        @last_git_head = read_git_head
+        @branch_switch_until = nil
 
         log_info "Watching #{root.sub("#{Rails.root}/", '')} for changes..."
 
@@ -73,13 +77,59 @@ module ReactManifest
         @regen_thread  = nil
         @regen_pending = false
         @regen_mutex   = nil
+        @git_dir       = nil
+        @last_git_head = nil
+        @branch_switch_until = nil
       end
 
       private
 
       def handle_file_changes(modified, added, removed, config)
+        if branch_switch_detected?
+          log_info "Branch change detected — skipping regeneration"
+          return
+        end
+
         (modified + added + removed).each { |f| Scanner.invalidate(f) }
         schedule_regeneration(config)
+      end
+
+      def branch_switch_detected?
+        return false unless @git_dir
+
+        return true if @branch_switch_until && Time.now < @branch_switch_until
+
+        current_head = read_git_head
+        return false unless current_head && @last_git_head
+
+        if current_head != @last_git_head
+          @last_git_head = current_head
+          @branch_switch_until = Time.now + BRANCH_SWITCH_COOLDOWN
+          return true
+        end
+
+        false
+      end
+
+      def detect_git_dir
+        git_path = File.join(Rails.root.to_s, ".git")
+        if File.file?(git_path)
+          content = File.read(git_path).strip
+          return content.sub("gitdir: ", "").strip if content.start_with?("gitdir: ")
+        elsif File.directory?(git_path)
+          return git_path
+        end
+        nil
+      rescue StandardError
+        nil
+      end
+
+      def read_git_head
+        return nil unless @git_dir
+
+        File.read(File.join(@git_dir, "HEAD")).strip
+      rescue StandardError
+        nil
       end
 
       # Schedule a regeneration on the background thread. Coalesces rapid

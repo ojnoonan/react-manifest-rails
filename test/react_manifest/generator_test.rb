@@ -130,17 +130,17 @@ class GeneratorRunTest < ReactManifestTest
     ReactManifest.configure { |c| c.dry_run = true }
     FileUtils.rm_f(File.join(output_dir, "ux_notifications.js"))
 
-    info_calls = []
+    debug_calls = []
     $stdout.stubs(:puts)
-    Rails.logger.stubs(:info).with do |msg|
-      info_calls << msg
+    Rails.logger.stubs(:debug).with do |msg|
+      debug_calls << msg
       true
     end
 
     ReactManifest::Generator.new(@config).run!
 
-    assert info_calls.any? { |m| m.include?("DRY-RUN") }, "Expected a DRY-RUN log message"
-    assert info_calls.any? { |m| m.include?("ux_notifications") }, "Expected ux_notifications in dry-run log"
+    assert debug_calls.any? { |m| m.include?("DRY-RUN") }, "Expected a DRY-RUN log message"
+    assert debug_calls.any? { |m| m.include?("ux_notifications") }, "Expected ux_notifications in dry-run log"
   end
 
   def test_pinned_file_is_not_overwritten

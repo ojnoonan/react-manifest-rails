@@ -9,6 +9,7 @@ module ReactManifest
     # ----------------------------------------------------------------
     initializer "react_manifest.ensure_manifests", after: :load_config_initializers do
       next unless Rails.env.development?
+      next if defined?(Rails::Console)
 
       config = ReactManifest.configuration
 
@@ -60,6 +61,8 @@ module ReactManifest
     # Start the file watcher in development
     # ----------------------------------------------------------------
     initializer "react_manifest.start_watcher" do
+      next if defined?(Rails::Console)
+
       if Rails.env.development? && !ReactManifest::Watcher.running?
         begin
           ReactManifest::Watcher.start(ReactManifest.configuration)

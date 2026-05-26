@@ -44,8 +44,8 @@ class WatcherTest < ReactManifestTest
     Warning[:performance] = true if Warning.respond_to?(:[]=)
   end
 
-  def test_routes_log_messages_through_rails_logger_info
-    Rails.logger.expects(:info).with("[ReactManifest] test message")
+  def test_routes_log_messages_through_rails_logger_debug
+    Rails.logger.expects(:debug).with("[ReactManifest] test message")
     ReactManifest::Watcher.send(:log_info, "test message")
   end
 
@@ -150,5 +150,105 @@ class WatcherTest < ReactManifestTest
            "handle_file_changes blocked for #{elapsed}s — should return immediately"
 
     join_regen_thread
+  end
+
+  # ---- Branch-switch detection ----
+
+  def test_skips_regeneration_when_git_head_changes
+    git_dir = File.join(@tmpdir, ".git")
+    FileUtils.mkdir_p(git_dir)
+    File.write(File.join(git_dir, "HEAD"), "ref: refs/heads/main\n")
+
+    ReactManifest::Watcher.instance_variable_set(:@git_dir, git_dir)
+    ReactManifest::Watcher.instance_variable_set(:@last_git_head, "ref: refs/heads/main")
+    ReactManifest::Watcher.instance_variable_set(:@branch_switch_until, nil)
+    ReactManifest::Watcher.instance_variable_set(:@regen_mutex, Mutex.new)
+
+    # Simulate branch switch
+    File.write(File.join(git_dir, "HEAD"), "ref: refs/heads/feature\n")
+
+    call_count = 0
+    stub_regenerate! { |_config| call_count += 1 }
+    ReactManifest::Scanner.stubs(:invalidate)
+
+    ReactManifest::Watcher.send(:handle_file_changes, ["/f.js"], [], [], @config)
+    join_regen_thread
+
+    assert_equal 0, call_count, "Should not regenerate after branch switch"
+  end
+
+  def test_skips_regeneration_during_cooldown_after_branch_switch
+    git_dir = File.join(@tmpdir, ".git")
+    FileUtils.mkdir_p(git_dir)
+    File.write(File.join(git_dir, "HEAD"), "ref: refs/heads/feature\n")
+
+    ReactManifest::Watcher.instance_variable_set(:@git_dir, git_dir)
+    ReactManifest::Watcher.instance_variable_set(:@last_git_head, "ref: refs/heads/feature")
+    ReactManifest::Watcher.instance_variable_set(:@branch_switch_until, Time.now + 10)
+    ReactManifest::Watcher.instance_variable_set(:@regen_mutex, Mutex.new)
+
+    call_count = 0
+    stub_regenerate! { |_config| call_count += 1 }
+    ReactManifest::Scanner.stubs(:invalidate)
+
+    ReactManifest::Watcher.send(:handle_file_changes, ["/f.js"], [], [], @config)
+    join_regen_thread
+
+    assert_equal 0, call_count, "Should not regenerate during cooldown"
+  end
+
+  def test_regenerates_normally_when_head_unchanged
+    git_dir = File.join(@tmpdir, ".git")
+    FileUtils.mkdir_p(git_dir)
+    File.write(File.join(git_dir, "HEAD"), "ref: refs/heads/main\n")
+
+    ReactManifest::Watcher.instance_variable_set(:@git_dir, git_dir)
+    ReactManifest::Watcher.instance_variable_set(:@last_git_head, "ref: refs/heads/main")
+    ReactManifest::Watcher.instance_variable_set(:@branch_switch_until, nil)
+    ReactManifest::Watcher.instance_variable_set(:@regen_mutex, Mutex.new)
+
+    call_count = 0
+    stub_regenerate! { |_config| call_count += 1 }
+    ReactManifest::Scanner.stubs(:invalidate)
+
+    ReactManifest::Watcher.send(:handle_file_changes, ["/f.js"], [], [], @config)
+    join_regen_thread
+
+    assert call_count >= 1, "Should regenerate when HEAD is unchanged (normal edit)"
+  end
+
+  def test_regenerates_when_no_git_dir
+    ReactManifest::Watcher.instance_variable_set(:@git_dir, nil)
+    ReactManifest::Watcher.instance_variable_set(:@last_git_head, nil)
+    ReactManifest::Watcher.instance_variable_set(:@branch_switch_until, nil)
+    ReactManifest::Watcher.instance_variable_set(:@regen_mutex, Mutex.new)
+
+    call_count = 0
+    stub_regenerate! { |_config| call_count += 1 }
+    ReactManifest::Scanner.stubs(:invalidate)
+
+    ReactManifest::Watcher.send(:handle_file_changes, ["/f.js"], [], [], @config)
+    join_regen_thread
+
+    assert call_count >= 1, "Should regenerate in non-git projects"
+  end
+
+  def test_detect_git_dir_with_regular_repo
+    git_dir = File.join(@tmpdir, ".git")
+    FileUtils.mkdir_p(git_dir)
+
+    result = ReactManifest::Watcher.send(:detect_git_dir)
+    assert_equal git_dir, result
+  end
+
+  def test_detect_git_dir_with_worktree
+    real_git = File.join(@tmpdir, "real_repo", ".git")
+    FileUtils.mkdir_p(real_git)
+
+    # .git file pointing to the real git dir (worktree format)
+    File.write(File.join(@tmpdir, ".git"), "gitdir: #{real_git}\n")
+
+    result = ReactManifest::Watcher.send(:detect_git_dir)
+    assert_equal real_git, result
   end
 end

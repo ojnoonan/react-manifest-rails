@@ -11,8 +11,8 @@ class LoggingTest < Minitest::Test
     ReactManifest.reset!
   end
 
-  def test_log_info_delegates_to_rails_logger_info_with_prefix
-    Rails.logger.expects(:info).with("[ReactManifest] started")
+  def test_log_info_delegates_to_rails_logger_debug_with_prefix
+    Rails.logger.expects(:debug).with("[ReactManifest] started")
     @host.log_info("started")
   end
 

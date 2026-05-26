@@ -8,7 +8,7 @@ module ReactManifest
 
     def log_info(message)
       full = "[ReactManifest] #{message}"
-      Rails.logger.info(full)
+      Rails.logger.debug(full)
       $stdout.puts(full) if stdout_logging_needed?
     end
 
