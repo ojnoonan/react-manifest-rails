@@ -91,6 +91,7 @@ module ReactManifest
         end
 
         (modified + added + removed).each { |f| Scanner.invalidate(f) }
+        ReactManifest.invalidate_component_maps!
         schedule_regeneration(config)
       end
 

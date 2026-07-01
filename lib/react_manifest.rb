@@ -35,6 +35,15 @@ module ReactManifest
       Scanner.clear_cache!
     end
 
+    # Drop the cached component-symbol -> bundle map used by
+    # resolve_bundle_for_component / resolve_bundles_for_component(_direct).
+    # Unlike reset!, this does NOT touch the current Configuration — safe to
+    # call whenever ux/ files change (e.g. from the file watcher) so newly
+    # added controllers/components are picked up without losing app config.
+    def invalidate_component_maps!
+      @component_maps_cache = nil
+    end
+
     # Returns the ordered list of bundle logical names for a given controller.
     # Used by the react_bundle_tag view helper.
     def resolve_bundles(ctrl_name)

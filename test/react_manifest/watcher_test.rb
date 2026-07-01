@@ -1,5 +1,6 @@
 require "test_helper"
 
+# rubocop:disable Metrics/ClassLength
 class WatcherTest < ReactManifestTest
   def setup
     super
@@ -87,6 +88,32 @@ class WatcherTest < ReactManifestTest
     ReactManifest::Scanner.expects(:invalidate).with(removed_file)
     ReactManifest::Watcher.send(:handle_file_changes, [], [], [removed_file], @config)
     join_regen_thread
+  end
+
+  def test_invalidates_component_maps_cache_on_any_file_change
+    stub_regenerate! { |_config| nil }
+    ReactManifest::Scanner.stubs(:invalidate)
+    ReactManifest.expects(:invalidate_component_maps!)
+    ReactManifest::Watcher.send(:handle_file_changes, ["/any/file.js"], [], [], @config)
+    join_regen_thread
+  end
+
+  def test_new_component_becomes_resolvable_after_a_file_change_event
+    ReactManifest::Generator.new(@config).run!
+    # Prime the cache the same way any earlier react_component call would,
+    # before the new controller dir/component below ever existed.
+    ReactManifest.resolve_bundles_for_component_direct("UsersIndex")
+
+    elements_dir = Rails.root.join("app/assets/javascripts/ux/app/elements")
+    FileUtils.mkdir_p(elements_dir)
+    new_file = elements_dir.join("elements_lazy_index.js.jsx")
+    File.write(new_file, "const ElementsLazyIndex = () => React.createElement('div', null);\n")
+
+    ReactManifest::Watcher.send(:handle_file_changes, [], [new_file.to_s], [], @config)
+    join_regen_thread
+
+    bundles = ReactManifest.resolve_bundles_for_component_direct("ElementsLazyIndex")
+    assert_includes bundles, "ux_manifests/ux_elements"
   end
 
   def test_triggers_manifest_regeneration_after_invalidation
@@ -268,3 +295,4 @@ class WatcherTest < ReactManifestTest
     assert_equal real_git, result
   end
 end
+# rubocop:enable Metrics/ClassLength
