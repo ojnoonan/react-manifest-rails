@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.31] - 2026-07-01
+
 ### Fixed
 - Controller manifests no longer pull in an unrelated bundle's files just because a component name collides (e.g. a generic `Show` component defined in two different `ux/app/*` dirs). A bundle now always satisfies a symbol from its own files first, instead of attributing it to whichever bundle happened to define that name first.
 - `react_component` no longer silently stops auto-injecting a component's bundle for the rest of the request after `react_bundle_tag` has rendered once. Previously, calling `react_component` for a component in an unrelated bundle (not the current controller's own bundle, e.g. from a haml/erb view mixing controller-based and component-based rendering) would render with no script tag at all if `react_bundle_tag` had already run earlier in the same request.
