@@ -67,12 +67,12 @@ if [[ -n "$DIRTY" ]]; then
   ERRORS+=("Release-critical files have uncommitted changes:\n$DIRTY\nCommit them before tagging.")
 fi
 
-# ── 7. Run RSpec ──────────────────────────────────────────────────────────
+# ── 7. Run test suite (Minitest via rake) ─────────────────────────────────
 echo ""
 echo "[release-preflight] Running test suite..."
-bundle exec rspec --no-color 2>&1 | tee /tmp/rspec-preflight.log
-if ! grep -qE "[0-9]+ examples?, 0 failures" /tmp/rspec-preflight.log; then
-  ERRORS+=("RSpec suite failed. Fix failing tests before releasing.")
+bundle exec rake test 2>&1 | tee /tmp/test-preflight.log
+if ! grep -qE "[0-9]+ runs, [0-9]+ assertions, 0 failures, 0 errors" /tmp/test-preflight.log; then
+  ERRORS+=("Test suite failed. Fix failing tests before releasing.")
 fi
 
 # ── 8. Run RuboCop ────────────────────────────────────────────────────────
@@ -102,7 +102,7 @@ if [[ ${#ERRORS[@]} -gt 0 ]]; then
   echo "  4. git add lib/react_manifest/version.rb CHANGELOG.md Gemfile.lock"
   echo "  5. git commit -m \"Release vX.Y.Z\""
   echo "  6. git tag -a vX.Y.Z -m \"Release vX.Y.Z\""
-  echo "  7. git push origin main vX.Y.Z"
+  echo "  7. git push origin master vX.Y.Z"
   exit 1
 fi
 

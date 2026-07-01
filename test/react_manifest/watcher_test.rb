@@ -112,15 +112,15 @@ class WatcherTest < ReactManifestTest
 
     # First change — spawns thread, which immediately blocks waiting for proceed
     ReactManifest::Watcher.send(:handle_file_changes, ["/f1.js"], [], [], @config)
-    started.pop  # wait until regeneration has actually started
+    started.pop # wait until regeneration has actually started
 
     # Second change arrives while first is still running — sets the pending flag
     ReactManifest::Watcher.send(:handle_file_changes, ["/f2.js"], [], [], @config)
 
     # Unblock first run; regen_loop detects pending and starts a second run
     proceed.push(true)
-    started.pop   # wait for the coalesced second run to begin
-    proceed.push(true)  # unblock it
+    started.pop # wait for the coalesced second run to begin
+    proceed.push(true) # unblock it
 
     join_regen_thread
     assert_equal 2, call_count, "Expected exactly 2 regenerations: initial + one coalesced follow-up"
@@ -132,13 +132,13 @@ class WatcherTest < ReactManifestTest
 
     stub_regenerate! do |_config|
       started.push(true)
-      sleep 0.05  # simulate slow work
+      sleep 0.05 # simulate slow work
       finished = true
     end
     ReactManifest::Scanner.stubs(:invalidate)
 
     ReactManifest::Watcher.send(:handle_file_changes, ["/f.js"], [], [], @config)
-    started.pop  # ensure regeneration is actually running before calling stop
+    started.pop # ensure regeneration is actually running before calling stop
 
     ReactManifest::Watcher.stop # must block until the thread finishes
 
