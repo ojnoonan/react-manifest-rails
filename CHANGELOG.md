@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.33] - 2026-07-01
+
 ### Fixed
 - `resolve_bundle_for_component`/`resolve_bundles_for_component(_direct)` (used by the `react_component` view helper) now pick up new controllers and components added while a development server is still running. Their `component_maps` cache is keyed only on config values, not on what's on disk, so once anything primed the cache (any earlier `react_component` call in the process), a controller dir or component added afterward was invisible until the process restarted — `react_component` would silently render with no bundle injected. The file watcher now invalidates this cache on every file change, the same way it already invalidates the scanner's per-file symbol cache.
 
