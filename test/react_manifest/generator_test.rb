@@ -86,6 +86,28 @@ class GeneratorRunTest < ReactManifestTest
     assert_includes content, "ux/app/main/main_index"
   end
 
+  def test_does_not_include_unrelated_bundle_when_component_name_collides_with_own_bundle_file
+    # "builder" sorts before "users" and defines its own generic "Show" component —
+    # this mirrors an app-builder/rvb style tool that defines common CRUD-ish names.
+    builder_dir = Rails.root.join("app/assets/javascripts/ux/app/builder")
+    users_dir = Rails.root.join("app/assets/javascripts/ux/app/users")
+    FileUtils.mkdir_p(builder_dir)
+    FileUtils.mkdir_p(users_dir)
+
+    File.write(builder_dir.join("builder_show.js.jsx"), "const Show = () => <div className=\"builder\" />;\n")
+    File.write(builder_dir.join("builder_only_helper.js.jsx"), "const BuilderOnlyHelper = () => <div />;\n")
+
+    # users/ defines its OWN "Show" component in a sibling file and renders it
+    # from users_index — an ordinary same-bundle reference, not a cross-app one.
+    File.write(users_dir.join("users_show.js.jsx"), "const Show = () => <div className=\"users\" />;\n")
+    File.write(users_dir.join("users_index.js.jsx"), "const UsersIndex = () => <Show />;\n")
+
+    @generator.run!
+    content = read_manifest("ux_users.js")
+
+    refute_includes content, "ux/app/builder/"
+  end
+
   def test_inlines_always_include_bundle_files_into_controller_manifests
     ReactManifest.configure { |c| c.always_include = ["ux_main"] }
 
@@ -113,6 +135,14 @@ class GeneratorRunTest < ReactManifestTest
     unchanged = results.select { |r| r[:status] == :unchanged }
     refute_empty unchanged
     assert_equal mtime_before, mtime_after
+  end
+
+  def test_manifest_header_does_not_embed_gem_version
+    # The gem version must never appear in generated content: it would make
+    # every manifest's digest change on every gem upgrade, forcing a full
+    # regeneration of every controller bundle for no functional reason.
+    content = read_manifest("ux_notifications.js")
+    refute_includes content, ReactManifest::VERSION
   end
 
   def test_dry_run_does_not_write_any_files

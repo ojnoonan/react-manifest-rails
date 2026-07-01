@@ -146,6 +146,7 @@ module ReactManifest
 
       controller_dirs = TreeClassifier.new(config).classify.controller_dirs
       symbol_to_bundle = {}
+      bundle_own_symbols = Hash.new { |h, k| h[k] = Set.new }
       bundle_files = Hash.new { |h, k| h[k] = [] }
       bundle_dependencies = Hash.new { |h, k| h[k] = Set.new }
 
@@ -160,13 +161,21 @@ module ReactManifest
 
             # Keep first writer to ensure deterministic behavior if a symbol is duplicated.
             symbol_to_bundle[symbol] ||= bundle_name
+            bundle_own_symbols[bundle_name] << symbol
           end
         end
       end
 
       bundle_files.each do |bundle_name, files|
+        own_symbols = bundle_own_symbols[bundle_name]
+
         files.each do |file_path|
           extract_used_component_symbols(file_path).each do |symbol|
+            # A symbol the bundle defines itself is always satisfied locally —
+            # never attribute it to another bundle just because that symbol
+            # name happens to collide with something defined elsewhere.
+            next if own_symbols.include?(symbol)
+
             dep_bundle = symbol_to_bundle[symbol]
             next unless dep_bundle && dep_bundle != bundle_name
 

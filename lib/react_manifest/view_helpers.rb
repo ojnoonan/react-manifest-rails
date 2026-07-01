@@ -26,7 +26,6 @@ module ReactManifest
       return "".html_safe if fresh_bundles.empty?
 
       fresh_bundles.each { |b| emitted << b }
-      mark_bundle_tag_rendered
 
       asset_names = fresh_bundles.map { |bundle| "#{bundle}.js" }
       javascript_include_tag(*asset_names, extname: false, **html_options)
@@ -38,7 +37,6 @@ module ReactManifest
     # This avoids strict dependence on controller_path -> bundle naming alignment.
     def react_component(*args, **kwargs, &block)
       html = super
-      return html if bundle_tag_rendered?
 
       component_name = args.first
       bundles = ReactManifest.resolve_bundles_for_component_direct(component_name)
@@ -77,18 +75,6 @@ module ReactManifest
       else
         @emitted_bundles ||= []
       end
-    end
-
-    def mark_bundle_tag_rendered
-      return unless respond_to?(:request, true) && request
-
-      request.env["react_manifest.bundle_tag_rendered"] = true
-    end
-
-    def bundle_tag_rendered?
-      return false unless respond_to?(:request, true) && request
-
-      request.env["react_manifest.bundle_tag_rendered"] == true
     end
   end
 end

@@ -30,7 +30,6 @@ module ReactManifest
 
     HEADER = <<~JS.freeze
       // AUTO-GENERATED — DO NOT EDIT
-      // react-manifest-rails %<version>s
       // Run `rails react_manifest:generate` to regenerate.
     JS
 
@@ -130,6 +129,7 @@ module ReactManifest
     def build_controller_context(controller_dirs)
       bundle_files = {}
       symbol_to_bundle = {}
+      bundle_own_symbols = Hash.new { |h, k| h[k] = Set.new }
       external_symbol_to_require = {}
       dependencies = Hash.new { |h, k| h[k] = Set.new }
       external_requires = Hash.new { |h, k| h[k] = Set.new }
@@ -145,6 +145,7 @@ module ReactManifest
             next unless sym.match?(/\A[A-Z][A-Za-z0-9_]*\z/)
 
             symbol_to_bundle[sym] ||= bundle_name
+            bundle_own_symbols[bundle_name] << sym
           end
         end
       end
@@ -170,8 +171,16 @@ module ReactManifest
 
       # Compute per-bundle cross-app and external dependencies
       bundle_files.each do |bundle_name, files|
+        own_symbols = bundle_own_symbols[bundle_name]
+
         files.each do |file_path|
           extract_used_component_symbols(file_path).each do |sym|
+            # A symbol the bundle defines itself (in any of its own files) is
+            # always satisfied locally — never attribute it to another bundle
+            # or an external provider just because that symbol name happens
+            # to collide with something defined elsewhere.
+            next if own_symbols.include?(sym)
+
             dep_bundle = symbol_to_bundle[sym]
             dependencies[bundle_name] << dep_bundle if dep_bundle && dep_bundle != bundle_name
 
@@ -316,10 +325,7 @@ module ReactManifest
     # ----------------------------------------------------------- helpers
 
     def header_lines
-      [
-        format(HEADER, version: ReactManifest::VERSION),
-        ""
-      ].flatten
+      [HEADER, ""]
     end
 
     def js_files_in(dir)

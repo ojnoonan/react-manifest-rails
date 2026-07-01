@@ -38,9 +38,31 @@ module ViewHelperClassBuilder
       end
     end
   end
+
+  # Unlike host_with_bundle_tag_class, this simulates a real Rails view context
+  # where `request` is available — matching production, where react_bundle_tag
+  # and react_component share the same request.env across the layout + template.
+  def host_with_request_class
+    @host_with_request_class ||= Class.new(base_class) do
+      include ReactManifest::ViewHelpers
+
+      attr_reader :controller_path, :request
+
+      def initialize(ctrl)
+        super()
+        @controller_path = ctrl
+        @request = Struct.new(:env).new({})
+      end
+
+      def respond_to?(sym, include_private = false) # rubocop:disable Style/OptionalBooleanParameter
+        %i[controller_path request].include?(sym) || super
+      end
+    end
+  end
 end
 
 # Tests for ReactManifest module methods that require manifests to already be generated.
+# rubocop:disable Metrics/ClassLength
 class ReactManifestModuleTest < ReactManifestTest
   include ViewHelperClassBuilder
 
@@ -246,6 +268,25 @@ class ReactManifestModuleTest < ReactManifestTest
                  ReactManifest.resolve_bundles_for_component("MainIndex")
   end
 
+  def test_resolve_bundles_for_component_does_not_include_unrelated_bundle_on_name_collision
+    # "builder" sorts before "users" and defines its own generic "Show" component —
+    # this mirrors an app-builder/rvb style tool defining common CRUD-ish names.
+    builder_dir = Rails.root.join("app/assets/javascripts/ux/app/builder")
+    FileUtils.mkdir_p(builder_dir)
+    File.write(builder_dir.join("builder_show.js.jsx"), "const Show = () => <div className=\"builder\" />;\n")
+
+    # users/ defines its OWN "Show" component in a sibling file and renders it
+    # from a second file in the same bundle — an ordinary same-bundle reference.
+    users_dir = Rails.root.join("app/assets/javascripts/ux/app/users")
+    File.write(users_dir.join("users_show.js.jsx"), "const Show = () => <div className=\"users\" />;\n")
+    File.write(users_dir.join("users_detail.js.jsx"), "const UsersDetail = () => <Show />;\n")
+
+    ReactManifest::Generator.new(@config).run!
+
+    assert_equal %w[ux_manifests/ux_users],
+                 ReactManifest.resolve_bundles_for_component("UsersDetail")
+  end
+
   def test_resolve_bundles_for_component_resolves_component_passed_as_jsx_prop
     dep_dir = Rails.root.join("app/assets/javascripts/ux/app/design_variables")
     app_dir = Rails.root.join("app/assets/javascripts/ux/app/main")
@@ -337,6 +378,7 @@ class ReactManifestModuleTest < ReactManifestTest
                  ReactManifest.resolve_bundles_for_component_direct("AccountShow")
   end
 end
+# rubocop:enable Metrics/ClassLength
 
 # Tests for the ReactManifest::ViewHelpers module mixed into a view-like object.
 class ViewHelpersTest < ReactManifestTest
@@ -475,5 +517,26 @@ class ViewHelpersTest < ReactManifestTest
     component_html = view.react_component("UsersIndex")
     refute_includes component_html, "ux_users.js"
     assert_includes component_html, "data-react-component='UsersIndex'"
+  end
+
+  def test_react_component_still_injects_bundle_for_unrelated_component_after_bundle_tag_renders
+    # A host page (e.g. a haml view with no ux/app/host dir of its own) renders
+    # react_bundle_tag in the layout, then calls react_component for a totally
+    # unrelated component living in its own app dir ("network"). The network
+    # bundle was never part of react_bundle_tag's resolution (it's neither the
+    # shared bundle nor named after the current controller), so it must still
+    # be injected by react_component itself.
+    network_dir = Rails.root.join("app/assets/javascripts/ux/app/network")
+    FileUtils.mkdir_p(network_dir)
+    File.write(network_dir.join("network_widget.js.jsx"), "const Network = () => <div />;\n")
+    ReactManifest::Generator.new(@config).run!
+
+    view = host_with_request_class.new("host")
+
+    bundle_html = view.react_bundle_tag
+    refute_includes bundle_html, "ux_network.js"
+
+    component_html = view.react_component("Network")
+    assert_includes component_html, "ux_network.js"
   end
 end
