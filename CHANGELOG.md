@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Generation now removes AUTO-GENERATED manifests whose `ux/app/<controller>/` directory no longer exists (renamed or deleted). Previously these were left behind indefinitely, still `//= require`-ing source files that no longer existed — a landmine for `assets:precompile`. Pinned (non-AUTO-GENERATED) files are never touched, and dry-run mode only logs what would be removed.
 
+### Changed
+- `config.stdout_logging` now defaults to `false`. `Rails.logger` always receives ReactManifest's status lines regardless of this flag; `stdout_logging` only controls an *additional* direct print to the terminal. Many development setups already have `Rails.logger` broadcast to stdout (`RAILS_LOG_TO_STDOUT`, Docker, `bin/dev`/Foreman), so the previous default of `true` printed every "File change detected" / "N manifest(s) written" line twice. Set `config.stdout_logging = true` explicitly if your `Rails.logger` does not already surface output in your terminal.
+
 ## [0.2.31] - 2026-07-01
 
 ### Fixed

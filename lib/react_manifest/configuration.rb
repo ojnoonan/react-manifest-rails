@@ -50,8 +50,13 @@ module ReactManifest
     # Extra diagnostic logging (summary lines and richer error context).
     attr_accessor :verbose
 
-    # Emit ReactManifest status lines to stdout in development.
-    # Independent from Rails.logger output.
+    # Also print ReactManifest status lines directly to stdout, in addition
+    # to Rails.logger (which always receives them regardless of this flag).
+    # Off by default: many development setups already have Rails.logger
+    # broadcast to the terminal (RAILS_LOG_TO_STDOUT, Docker/Foreman, etc.),
+    # and enabling this on top of that prints every line twice. Turn it on
+    # only if your Rails.logger does NOT already surface output in your
+    # terminal and you want a guaranteed visible line per event.
     attr_accessor :stdout_logging
 
     # Explicit symbol-to-require-path mapping for external globals.
@@ -88,7 +93,7 @@ module ReactManifest
       @extensions        = %w[js jsx]
       @dry_run           = false
       @verbose           = false
-      @stdout_logging    = true
+      @stdout_logging    = false
       @external_providers = {}
       @external_roots     = []
     end

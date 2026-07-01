@@ -55,8 +55,8 @@ class ConfigurationTest < ReactManifestTest
     assert_equal false, @config.verbose?
   end
 
-  def test_stdout_logging_enabled_by_default
-    assert_equal true, @config.stdout_logging?
+  def test_stdout_logging_disabled_by_default
+    assert_equal false, @config.stdout_logging?
   end
 
   def test_abs_ux_root_starts_with_rails_root

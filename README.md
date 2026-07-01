@@ -135,7 +135,7 @@ ReactManifest.configure do |config|
   config.size_threshold_kb = 500           # warn if a bundle exceeds this
   config.dry_run          = false          # never write; only print what would change
   config.verbose          = false          # extra diagnostic detail
-  config.stdout_logging   = true           # print status lines to terminal
+  config.stdout_logging   = false          # also print status lines directly to stdout (see note below)
 end
 ```
 
@@ -146,6 +146,7 @@ end
 - **`dry_run`**: also honoured by `DRY_RUN=1` environment variable at runtime.
 - **`extensions`**: add `ts` and `tsx` to enable TypeScript source detection.
 - **`external_roots` / `external_providers`**: do not point these at files already inside shared `ux/` dirs (`components/`, `hooks/`, `lib/`, etc.). The generator now skips those overlaps to prevent duplicate declarations in browser runtime.
+- **`stdout_logging`**: `Rails.logger` always receives status lines regardless of this flag. Turn this on only if your `Rails.logger` does *not* already print to your terminal in development — if it does (common with `RAILS_LOG_TO_STDOUT`, Docker, or `bin/dev`/Foreman setups), enabling this prints every line twice.
 
 ## Commands
 
