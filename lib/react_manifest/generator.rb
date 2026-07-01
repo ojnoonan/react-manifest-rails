@@ -12,7 +12,8 @@ module ReactManifest
   # Returns an array of result hashes:
   #   [{path: "/abs/path/ux_shared.js", status: :written}, ...]
   #
-  # Possible +status+ values: +:written+, +:unchanged+, +:skipped_pinned+, +:dry_run+.
+  # Possible +status+ values: +:written+, +:unchanged+, +:skipped_pinned+, +:dry_run+,
+  # +:removed_orphan+.
   #
   # Generates:
   #   ux_shared.js   — requires all files from shared dirs (components/, hooks/, lib/, etc.)
@@ -21,6 +22,9 @@ module ReactManifest
   # All generated files carry the AUTO-GENERATED header and are idempotent
   # (skips write if content unchanged). Writes are atomic (temp-file + rename)
   # to avoid partial reads from concurrent processes.
+  #
+  # Manifests whose ux/app/<controller> dir no longer exists are removed
+  # automatically (pinned files are never removed this way).
   #
   # Never touches application.js, application_dev.js, or files in exclude_paths.
   # rubocop:disable Metrics/ClassLength
@@ -57,6 +61,12 @@ module ReactManifest
 
       # Phase 2: write — each write is atomic (tmp + rename).
       results = manifests.map { |m| write_manifest(m[:filename], m[:content]) }
+
+      # Phase 3: remove manifests left behind by a controller dir that no
+      # longer exists (renamed/deleted ux/app/<controller>). Never touches
+      # pinned (non-AUTO-GENERATED) files.
+      expected_filenames = manifests.map { |m| m[:filename] }
+      results.concat(remove_orphaned_manifests(expected_filenames))
 
       print_summary(results) if @config.verbose?
       results
@@ -322,6 +332,25 @@ module ReactManifest
       end
     end
 
+    # Remove AUTO-GENERATED manifests that no longer correspond to any
+    # current shared/controller bundle (e.g. a ux/app/<controller> dir was
+    # deleted or renamed). Skips pinned files and, in dry-run mode, only
+    # logs what would be removed.
+    def remove_orphaned_manifests(expected_filenames)
+      Dir.glob(File.join(@config.abs_manifest_dir, "ux_*.js")).filter_map do |file|
+        next if expected_filenames.include?(File.basename(file))
+        next unless auto_generated?(file)
+
+        if @config.dry_run?
+          log_info "DRY-RUN: would remove orphaned manifest #{file}"
+          { path: file, status: :dry_run }
+        else
+          File.delete(file)
+          { path: file, status: :removed_orphan }
+        end
+      end
+    end
+
     # ----------------------------------------------------------- helpers
 
     def header_lines
@@ -433,7 +462,8 @@ module ReactManifest
       counts = results.group_by { |r| r[:status] }.transform_values(&:count)
       log_info "Generated: #{counts[:written] || 0} written, " \
                "#{counts[:unchanged] || 0} unchanged, " \
-               "#{counts[:skipped_pinned] || 0} skipped (not auto-generated)"
+               "#{counts[:skipped_pinned] || 0} skipped (not auto-generated), " \
+               "#{counts[:removed_orphan] || 0} orphaned removed"
     end
   end
   # rubocop:enable Metrics/ClassLength

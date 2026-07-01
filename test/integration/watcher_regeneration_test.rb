@@ -38,6 +38,19 @@ class WatcherRegenerationTest < ReactManifestTest
     refute_includes manifest_content("ux_notifications.js"), "notifications_show"
   end
 
+  def test_removing_an_entire_controller_directory_removes_its_manifest_file
+    ReactManifest::Generator.new(@config).run!
+    manifest_path = File.join(@config.abs_manifest_dir, "ux_notifications.js")
+    assert File.exist?(manifest_path)
+
+    removed_dir = Rails.root.join("app/assets/javascripts/ux/app/notifications")
+    FileUtils.rm_rf(removed_dir)
+
+    trigger_change([removed_dir.to_s])
+
+    refute File.exist?(manifest_path)
+  end
+
   def test_modifying_a_shared_file_causes_the_shared_manifest_to_update
     ReactManifest::Generator.new(@config).run!
 

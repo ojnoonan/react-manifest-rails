@@ -184,6 +184,38 @@ class GeneratorRunTest < ReactManifestTest
     assert_includes File.read(pinned_path), "HAND CURATED"
   end
 
+  def test_removes_orphaned_manifest_when_controller_directory_is_deleted
+    manifest_path = File.join(output_dir, "ux_notifications.js")
+    assert File.exist?(manifest_path)
+
+    FileUtils.rm_rf(Rails.root.join("app/assets/javascripts/ux/app/notifications"))
+    results = @generator.run!
+
+    refute File.exist?(manifest_path)
+    assert(results.any? { |r| r[:path] == manifest_path && r[:status] == :removed_orphan })
+  end
+
+  def test_does_not_remove_pinned_manifest_whose_controller_directory_is_deleted
+    manifest_path = File.join(output_dir, "ux_notifications.js")
+    File.write(manifest_path, "// HAND CURATED\n//= require something_special\n")
+
+    FileUtils.rm_rf(Rails.root.join("app/assets/javascripts/ux/app/notifications"))
+    @generator.run!
+
+    assert File.exist?(manifest_path)
+    assert_includes File.read(manifest_path), "HAND CURATED"
+  end
+
+  def test_dry_run_does_not_remove_orphaned_manifest
+    manifest_path = File.join(output_dir, "ux_notifications.js")
+    FileUtils.rm_rf(Rails.root.join("app/assets/javascripts/ux/app/notifications"))
+
+    ReactManifest.configure { |c| c.dry_run = true }
+    ReactManifest::Generator.new(@config).run!
+
+    assert File.exist?(manifest_path)
+  end
+
   def test_does_not_touch_application_js
     app_path = File.join(@config.abs_output_dir, "application.js")
     mtime = File.mtime(app_path)

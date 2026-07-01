@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Generation now removes AUTO-GENERATED manifests whose `ux/app/<controller>/` directory no longer exists (renamed or deleted). Previously these were left behind indefinitely, still `//= require`-ing source files that no longer existed — a landmine for `assets:precompile`. Pinned (non-AUTO-GENERATED) files are never touched, and dry-run mode only logs what would be removed.
+
 ## [0.2.31] - 2026-07-01
 
 ### Fixed

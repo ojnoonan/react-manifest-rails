@@ -108,6 +108,8 @@ Files carry an `AUTO-GENERATED` header. Any file without it is never overwritten
 
 Writes are atomic (temp file + rename) and idempotent (SHA-256 comparison skips unchanged files).
 
+If a `ux/app/<controller>/` directory is renamed or deleted, its manifest is removed automatically on the next generation (dev file watcher, boot, or `rails react_manifest:generate`) — pinned files are never removed this way.
+
 ## Asset Compilation & Minification
 
 The generated files are standard Sprockets manifests — `//= require` directives only. Sprockets processes them identically to `application.js`:
