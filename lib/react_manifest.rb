@@ -163,13 +163,16 @@ module ReactManifest
         bundle_name = ctrl[:bundle_name]
         files = js_files_in_controller(ctrl[:path], config)
         bundle_files[bundle_name].concat(files)
+        isolated = config.isolated_app_dirs.include?(ctrl[:name])
 
         files.each do |file_path|
           extract_defined_symbols(file_path).each do |symbol|
             next unless symbol.match?(/\A[A-Z][A-Za-z0-9_]*\z/)
 
             # Keep first writer to ensure deterministic behavior if a symbol is duplicated.
-            symbol_to_bundle[symbol] ||= bundle_name
+            # Isolated dirs never register into the shared symbol index (see
+            # Generator#build_controller_context for the full rationale).
+            symbol_to_bundle[symbol] ||= bundle_name unless isolated
             bundle_own_symbols[bundle_name] << symbol
           end
         end

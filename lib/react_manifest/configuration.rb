@@ -31,6 +31,22 @@ module ReactManifest
     # Example: ignore = ["admin"] skips ux/app/admin/* when building ux_<controller>.js.
     attr_accessor :ignore
 
+    # Controller directory names (under ux_root/app_dir) whose files must never
+    # be inlined into any OTHER controller's manifest via inferred cross-app
+    # dependency detection. Their own ux_<name>.js manifest is unaffected —
+    # still includes all of their own files as usual.
+    #
+    # Symbol usage detection is pure regex (no AST), so a generic component
+    # name can collide with an unrelated word appearing as plain JSX text
+    # elsewhere (e.g. a "Show" component vs a "Show More" button label in a
+    # completely different controller) and get wrongly inlined everywhere.
+    # Use this for self-contained dirs (e.g. a page-builder tool bundling its
+    # own vendored library) that should truly never leak into other bundles.
+    #
+    # Example:
+    #   config.isolated_app_dirs = ["rvb"]
+    attr_accessor :isolated_app_dirs
+
     # Path segments to exclude while scanning files under ux_root.
     # This is segment matching (not full path matching), so "vendor" excludes
     # ux/vendor/foo.js and ux/app/users/vendor/bar.jsx, but not ux/vendor_custom/x.js.
@@ -88,6 +104,7 @@ module ReactManifest
       @shared_bundle     = "ux_shared"
       @always_include    = []
       @ignore            = []
+      @isolated_app_dirs = []
       @exclude_paths     = %w[react react_dev vendor]
       @size_threshold_kb = 500
       @extensions        = %w[js jsx]
@@ -150,7 +167,7 @@ module ReactManifest
     end
 
     def cache_key
-      [ux_root, app_dir, extensions, always_include, exclude_paths, external_providers].hash
+      [ux_root, app_dir, extensions, always_include, exclude_paths, external_providers, isolated_app_dirs].hash
     end
   end
 end

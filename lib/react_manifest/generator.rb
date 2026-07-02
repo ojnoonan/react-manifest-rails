@@ -150,11 +150,18 @@ module ReactManifest
         files = js_files_in(ctrl[:path])
         bundle_files[bundle_name] = files
 
+        isolated = @config.isolated_app_dirs.include?(ctrl[:name])
+
         files.each do |file_path|
           extract_defined_symbols(file_path).each do |sym|
             next unless sym.match?(/\A[A-Z][A-Za-z0-9_]*\z/)
 
-            symbol_to_bundle[sym] ||= bundle_name
+            # Isolated dirs never register into the shared symbol index, so
+            # no other bundle can ever be inferred to depend on them —
+            # regardless of what their own symbol names happen to collide
+            # with (regex-based usage detection can't tell a real component
+            # reference from an unrelated word appearing as plain JSX text).
+            symbol_to_bundle[sym] ||= bundle_name unless isolated
             bundle_own_symbols[bundle_name] << sym
           end
         end

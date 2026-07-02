@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- New `config.isolated_app_dirs` option. A listed controller dir's own manifest is generated as usual, but its files/symbols are never inferred as a dependency of any *other* controller's manifest. Symbol usage detection is regex-based (no AST parsing), so a generic component name can collide with an unrelated word appearing as plain JSX text elsewhere (e.g. a `Show` component vs. a "Show More" button label in a completely different controller) and get wrongly inlined into every other bundle. Use this for self-contained dirs — e.g. a page-builder tool bundling its own vendored library — that should never leak into other pages.
+
 ## [0.2.33] - 2026-07-01
 
 ### Fixed

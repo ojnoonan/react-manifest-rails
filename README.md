@@ -131,6 +131,7 @@ ReactManifest.configure do |config|
   config.extensions       = %w[js jsx]     # add ts tsx for TypeScript
   config.always_include   = []             # extra shared files always added to every bundle
   config.ignore           = []             # controller dir names to skip entirely
+  config.isolated_app_dirs = []            # controller dir names that must never leak into other bundles
   config.exclude_paths    = ["react", "react_dev", "vendor"]  # path segments to exclude
   config.size_threshold_kb = 500           # warn if a bundle exceeds this
   config.dry_run          = false          # never write; only print what would change
@@ -142,6 +143,7 @@ end
 ### Key option notes
 
 - **`ignore`**: skips entire controller dirs under `ux/app/`. `ignore = ["admin"]` excludes `ux/app/admin/`.
+- **`isolated_app_dirs`**: a controller dir's own `ux_<name>.js` is generated as usual, but its files/symbols are never inferred as a dependency of any *other* controller. Symbol usage detection is regex-based (no AST), so a generic component name can collide with an unrelated word appearing as plain JSX text elsewhere (e.g. a `Show` component vs. a "Show More" button label in a different controller) and get wrongly inlined everywhere. Use this for self-contained dirs — e.g. a page-builder tool bundling its own vendored library — that should never leak into other pages. `isolated_app_dirs = ["rvb"]` isolates `ux/app/rvb/`.
 - **`exclude_paths`**: excludes files whose path contains any listed segment. Not based on `application.js`.
 - **`dry_run`**: also honoured by `DRY_RUN=1` environment variable at runtime.
 - **`extensions`**: add `ts` and `tsx` to enable TypeScript source detection.

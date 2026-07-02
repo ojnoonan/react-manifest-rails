@@ -287,6 +287,22 @@ class ReactManifestModuleTest < ReactManifestTest
                  ReactManifest.resolve_bundles_for_component("UsersDetail")
   end
 
+  def test_isolated_app_dirs_prevents_plain_text_false_positive_from_leaking_via_component_resolution
+    ReactManifest.configure { |c| c.isolated_app_dirs = ["rvb"] }
+
+    rvb_dir = Rails.root.join("app/assets/javascripts/ux/app/rvb")
+    FileUtils.mkdir_p(rvb_dir)
+    File.write(rvb_dir.join("rvb_show.js.jsx"), "const Show = () => <div>Builder preview</div>;\n")
+
+    users_dir = Rails.root.join("app/assets/javascripts/ux/app/users")
+    File.write(users_dir.join("users_index.js.jsx"), "const UsersIndex = () => <button>Show More</button>;\n")
+
+    ReactManifest::Generator.new(@config).run!
+
+    assert_equal %w[ux_manifests/ux_users],
+                 ReactManifest.resolve_bundles_for_component("UsersIndex")
+  end
+
   def test_resolve_bundles_for_component_resolves_component_passed_as_jsx_prop
     dep_dir = Rails.root.join("app/assets/javascripts/ux/app/design_variables")
     app_dir = Rails.root.join("app/assets/javascripts/ux/app/main")

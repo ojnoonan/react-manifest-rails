@@ -34,6 +34,10 @@ class ConfigurationTest < ReactManifestTest
     assert_equal [], @config.ignore
   end
 
+  def test_default_isolated_app_dirs_is_empty_array
+    assert_equal [], @config.isolated_app_dirs
+  end
+
   def test_default_exclude_paths_includes_vendor_and_react
     assert_includes @config.exclude_paths, "vendor"
     assert_includes @config.exclude_paths, "react"
@@ -180,6 +184,12 @@ class ConfigurationTest < ReactManifestTest
   def test_cache_key_changes_after_always_include_mutation
     before = @config.cache_key
     @config.always_include = ["ux_main"]
+    refute_equal before, @config.cache_key
+  end
+
+  def test_cache_key_changes_after_isolated_app_dirs_mutation
+    before = @config.cache_key
+    @config.isolated_app_dirs = ["rvb"]
     refute_equal before, @config.cache_key
   end
 

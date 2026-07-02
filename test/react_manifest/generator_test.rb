@@ -108,6 +108,44 @@ class GeneratorRunTest < ReactManifestTest
     refute_includes content, "ux/app/builder/"
   end
 
+  def test_plain_jsx_text_matching_a_component_name_falsely_pulls_in_unrelated_bundle
+    # No AST parsing means "Show" as a JSX tag and "Show" as plain button text
+    # are textually indistinguishable to the regex scanner.
+    rvb_dir = Rails.root.join("app/assets/javascripts/ux/app/rvb")
+    users_dir = Rails.root.join("app/assets/javascripts/ux/app/users")
+    FileUtils.mkdir_p(rvb_dir)
+    FileUtils.mkdir_p(users_dir)
+
+    File.write(rvb_dir.join("rvb_show.js.jsx"), "const Show = () => <div>Builder preview</div>;\n")
+    File.write(rvb_dir.join("babel.min.js"), "var A=1,B=2,C=3;\n")
+    File.write(users_dir.join("users_index.js.jsx"), "const UsersIndex = () => <button>Show More</button>;\n")
+
+    @generator.run!
+    content = read_manifest("ux_users.js")
+
+    assert_includes content, "ux/app/rvb/", "expected today's known false-positive leak to reproduce"
+  end
+
+  def test_isolated_app_dirs_prevents_a_dir_from_leaking_into_other_manifests
+    ReactManifest.configure { |c| c.isolated_app_dirs = ["rvb"] }
+
+    rvb_dir = Rails.root.join("app/assets/javascripts/ux/app/rvb")
+    users_dir = Rails.root.join("app/assets/javascripts/ux/app/users")
+    FileUtils.mkdir_p(rvb_dir)
+    FileUtils.mkdir_p(users_dir)
+
+    File.write(rvb_dir.join("rvb_show.js.jsx"), "const Show = () => <div>Builder preview</div>;\n")
+    File.write(rvb_dir.join("babel.min.js"), "var A=1,B=2,C=3;\n")
+    File.write(users_dir.join("users_index.js.jsx"), "const UsersIndex = () => <button>Show More</button>;\n")
+
+    @generator.run!
+
+    refute_includes read_manifest("ux_users.js"), "ux/app/rvb/"
+    # The isolated dir's own manifest is unaffected — still includes its own files.
+    assert_includes read_manifest("ux_rvb.js"), "ux/app/rvb/rvb_show"
+    assert_includes read_manifest("ux_rvb.js"), "ux/app/rvb/babel.min"
+  end
+
   def test_inlines_always_include_bundle_files_into_controller_manifests
     ReactManifest.configure { |c| c.always_include = ["ux_main"] }
 
