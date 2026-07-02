@@ -46,4 +46,9 @@ Gem::Specification.new do |spec|
   # The gem gracefully degrades without it; add to your app's Gemfile:
   #   gem "listen", "~> 3.0", group: :development
   spec.add_development_dependency "listen", "~> 3.0"
+  # mini_racer is a soft runtime dependency (AST-based symbol extraction).
+  # The gem gracefully degrades to regex extraction without it; add to your
+  # app's Gemfile to opt in:
+  #   gem "mini_racer", group: :development
+  spec.add_development_dependency "mini_racer"
 end
