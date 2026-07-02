@@ -149,6 +149,7 @@ end
 - **`extensions`**: add `ts` and `tsx` to enable TypeScript source detection.
 - **`external_roots` / `external_providers`**: do not point these at files already inside shared `ux/` dirs (`components/`, `hooks/`, `lib/`, etc.). The generator now skips those overlaps to prevent duplicate declarations in browser runtime.
 - **`stdout_logging`**: `Rails.logger` always receives status lines regardless of this flag. Turn this on only if your `Rails.logger` does *not* already print to your terminal in development — if it does (common with `RAILS_LOG_TO_STDOUT`, Docker, or `bin/dev`/Foreman setups), enabling this prints every line twice.
+- **AST-based symbol extraction**: add `gem "mini_racer"` to your Gemfile to opt in. When present, definitions and usages are derived from a real JS/JSX AST (Acorn) instead of regex, which fixes false positives like a `Show` component colliding with unrelated text such as a "Show More" button label. Falls back to regex extraction per-file on any parse failure (always logged via `Rails.logger.warn` with file/line/column when available) — generation never breaks because of this. Without `mini_racer`, behavior is unchanged from today.
 
 ## Commands
 
