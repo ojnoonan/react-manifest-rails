@@ -166,7 +166,7 @@ module ReactManifest
       cache = self.class.file_symbol_cache
       return cache[file_path] if cache.key?(file_path)
 
-      cache[file_path] = parse_definitions(content)
+      cache[file_path] = parse_definitions(content, file_path: file_path)
     end
 
     def scan_file_definitions(file_path)
@@ -175,17 +175,13 @@ module ReactManifest
       rescue Errno::ENOENT, Errno::EACCES, Encoding::InvalidByteSequenceError
         return []
       end
-      parse_definitions(content)
+      parse_definitions(content, file_path: file_path)
     end
 
-    def parse_definitions(content)
+    def parse_definitions(content, file_path: nil)
       return [] unless content
 
-      symbols = []
-      DEFINITION_PATTERNS.each do |pattern|
-        content.scan(pattern) { |m| symbols << m[0] }
-      end
-      symbols.uniq
+      SymbolExtractor.extract_definitions(content, file_path: file_path)
     end
 
     def relative_require_path(abs_path)
@@ -201,7 +197,7 @@ module ReactManifest
         content = shared_file_content[file_path]
         next unless content
 
-        SymbolExtractor.extract_usages(content).each do |sym|
+        SymbolExtractor.extract_usages(content, file_path: file_path).each do |sym|
           next unless controller_symbol_index.key?(sym)
 
           info = controller_symbol_index[sym]
@@ -224,7 +220,7 @@ module ReactManifest
           next
         end
 
-        SymbolExtractor.extract_usages(content).each do |sym|
+        SymbolExtractor.extract_usages(content, file_path: file_path).each do |sym|
           next unless controller_symbol_index.key?(sym)
 
           info = controller_symbol_index[sym]

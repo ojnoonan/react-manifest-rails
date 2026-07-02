@@ -430,6 +430,25 @@ class GeneratorRunTest < ReactManifestTest
     assert_includes shared_content, "//= require ux/components/tsx_button"
     refute_includes shared_content, "tsx_button.tsx"
   end
+
+  def test_definition_parse_failure_falls_back_and_warns_with_file_path
+    ctrl_dir = Rails.root.join("app/assets/javascripts/ux/app/broken")
+    FileUtils.mkdir_p(ctrl_dir)
+    File.write(ctrl_dir.join("broken.js.jsx"), "const Broken = () => {\n  return <div>\n};\n")
+
+    warn_calls = []
+    $stdout.stubs(:puts)
+    Rails.logger.stubs(:warn).with do |msg|
+      warn_calls << msg
+      true
+    end
+
+    @generator.run!
+
+    assert(warn_calls.any? { |m| m.include?("broken.js.jsx") && m.include?("line") },
+           "expected a line-numbered warning naming the broken file, got: #{warn_calls.inspect}")
+    assert File.exist?(File.join(output_dir, "ux_broken.js")), "generation should still complete for other files"
+  end
 end
 
 class GeneratorCleanTest < ReactManifestTest

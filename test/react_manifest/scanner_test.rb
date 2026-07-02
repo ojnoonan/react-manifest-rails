@@ -466,9 +466,9 @@ class ScannerTest < ReactManifestTest
 
     rescanned = []
     original_parse = @scanner.method(:parse_definitions)
-    @scanner.define_singleton_method(:parse_definitions) do |content|
+    @scanner.define_singleton_method(:parse_definitions) do |content, file_path: nil|
       rescanned << content
-      original_parse.call(content)
+      original_parse.call(content, file_path: file_path)
     end
 
     @scanner.scan(classification)

@@ -214,14 +214,14 @@ module ReactManifest
 
     def extract_defined_symbols(file_path)
       content = File.read(file_path, encoding: "utf-8")
-      SymbolExtractor.extract_definitions(content)
+      SymbolExtractor.extract_definitions(content, file_path: file_path)
     rescue Errno::ENOENT, Errno::EACCES, Encoding::InvalidByteSequenceError
       []
     end
 
     def extract_used_component_symbols(file_path)
       content = File.read(file_path, encoding: "utf-8")
-      SymbolExtractor.extract_usages(content)
+      SymbolExtractor.extract_usages(content, file_path: file_path)
     rescue Errno::ENOENT, Errno::EACCES, Encoding::InvalidByteSequenceError
       []
     end

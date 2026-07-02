@@ -395,18 +395,14 @@ module ReactManifest
 
     def extract_defined_symbols(file_path)
       content = File.read(file_path, encoding: "utf-8")
-      symbols = []
-      ReactManifest::Scanner::DEFINITION_PATTERNS.each do |pattern|
-        content.scan(pattern) { |m| symbols << m[0] }
-      end
-      symbols.uniq
+      SymbolExtractor.extract_definitions(content, file_path: file_path)
     rescue Errno::ENOENT, Errno::EACCES, Encoding::InvalidByteSequenceError
       []
     end
 
     def extract_used_component_symbols(file_path)
       content = File.read(file_path, encoding: "utf-8")
-      SymbolExtractor.extract_usages(content)
+      SymbolExtractor.extract_usages(content, file_path: file_path)
     rescue Errno::ENOENT, Errno::EACCES, Encoding::InvalidByteSequenceError
       []
     end
