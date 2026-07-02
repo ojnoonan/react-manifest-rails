@@ -49,4 +49,20 @@ class AstExtractorTest < ReactManifestTest
     Rails.logger.expects(:warn).with { |msg| msg.include?("unknown file") }
     ReactManifest::AstExtractor.extract_usages("const Broken = () => {\n  return <div>\n};\n")
   end
+
+  def test_recovers_from_poisoned_context_instead_of_failing_forever
+    poisoned_context = mock("poisoned_context")
+    poisoned_context.expects(:call).raises(MiniRacer::ContextDisposedError, "V8 isolate disposed")
+    ReactManifest::AstExtractor.instance_variable_set(:@context, poisoned_context)
+
+    Rails.logger.expects(:warn).with { |msg| msg.include?("V8 isolate disposed") }
+    result = ReactManifest::AstExtractor.extract_usages("const result = formatDate(value);\n", file_path: "poison.jsx")
+    assert_nil result
+
+    # The poisoned context must have been discarded so the next call rebuilds a fresh one.
+    assert_nil ReactManifest::AstExtractor.instance_variable_get(:@context)
+
+    recovered = ReactManifest::AstExtractor.extract_usages("const result = formatDate(value);\n")
+    assert_includes recovered, "formatDate"
+  end
 end

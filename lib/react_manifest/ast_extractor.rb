@@ -52,6 +52,9 @@ module ReactManifest
 
       def call_js(function_name, content)
         JSON.parse(context.call(function_name, content))
+      rescue MiniRacer::Error => e
+        @context = nil
+        { "success" => false, "error" => { "message" => e.message, "line" => nil, "column" => nil } }
       rescue StandardError => e
         { "success" => false, "error" => { "message" => e.message, "line" => nil, "column" => nil } }
       end
