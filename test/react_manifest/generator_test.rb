@@ -108,9 +108,11 @@ class GeneratorRunTest < ReactManifestTest
     refute_includes content, "ux/app/builder/"
   end
 
-  def test_plain_jsx_text_matching_a_component_name_falsely_pulls_in_unrelated_bundle
-    # No AST parsing means "Show" as a JSX tag and "Show" as plain button text
-    # are textually indistinguishable to the regex scanner.
+  def test_plain_jsx_text_matching_a_component_name_does_not_pull_in_unrelated_bundle
+    # Regex-only scanning can't tell "Show" the JSX tag apart from "Show" as
+    # plain button text (a known limitation — see isolated_app_dirs). With
+    # the AST engine available (mini_racer is a dev dependency, so it always
+    # is in this test suite), a real AST correctly distinguishes the two.
     rvb_dir = Rails.root.join("app/assets/javascripts/ux/app/rvb")
     users_dir = Rails.root.join("app/assets/javascripts/ux/app/users")
     FileUtils.mkdir_p(rvb_dir)
@@ -123,7 +125,7 @@ class GeneratorRunTest < ReactManifestTest
     @generator.run!
     content = read_manifest("ux_users.js")
 
-    assert_includes content, "ux/app/rvb/", "expected today's known false-positive leak to reproduce"
+    refute_includes content, "ux/app/rvb/"
   end
 
   def test_isolated_app_dirs_prevents_a_dir_from_leaking_into_other_manifests

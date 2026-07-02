@@ -30,9 +30,44 @@ module ReactManifest
 
     module_function
 
-    def extract_definitions(content)
+    # Uses the AST engine (mini_racer) when available; falls back to regex
+    # extraction for this content on any AST failure (unavailable engine,
+    # parse error, unsupported syntax such as TypeScript).
+    def extract_definitions(content, file_path: nil)
       return [] unless content
 
+      if ast_engine_available?
+        result = AstExtractor.extract_definitions(content, file_path: file_path)
+        return result if result
+      end
+
+      regex_extract_definitions(content)
+    end
+
+    def extract_usages(content, file_path: nil)
+      return [] unless content
+
+      if ast_engine_available?
+        result = AstExtractor.extract_usages(content, file_path: file_path)
+        return result if result
+      end
+
+      regex_extract_usages(content)
+    end
+
+    # Decided once per process: does `require "mini_racer"` succeed?
+    def ast_engine_available?
+      return @ast_engine_available if defined?(@ast_engine_available)
+
+      @ast_engine_available = begin
+        require_relative "ast_extractor"
+        true
+      rescue LoadError
+        false
+      end
+    end
+
+    def regex_extract_definitions(content)
       symbols = []
       DEFINITION_PATTERNS.each do |pattern|
         content.scan(pattern) { |m| symbols << m[0] }
@@ -40,9 +75,7 @@ module ReactManifest
       symbols.uniq
     end
 
-    def extract_usages(content)
-      return [] unless content
-
+    def regex_extract_usages(content)
       local_syms = Set.new
       DEFINITION_PATTERNS.each { |p| content.scan(p) { |m| local_syms << m[0] } }
 

@@ -225,4 +225,38 @@ class SymbolExtractorTest < ReactManifestTest
     result = ReactManifest::SymbolExtractor.extract_usages(content)
     assert_equal 1, result.count("Foo")
   end
+
+  # --- dispatcher: AST engine used when available ---
+
+  def test_extract_usages_uses_ast_engine_when_available
+    content = "const UsersIndex = () => <button>Show More</button>;\n"
+    assert_equal [], ReactManifest::SymbolExtractor.extract_usages(content)
+  end
+
+  def test_extract_usages_falls_back_to_regex_for_a_file_the_ast_engine_cannot_parse
+    # Adjacent bare JSX elements are invalid JSX (Acorn/Babel both reject this),
+    # but the regex fallback doesn't care and matches "Foo" via plain text scan.
+    content = "<Foo /><Foo /><Foo />"
+    result = ReactManifest::SymbolExtractor.extract_usages(content)
+    assert_equal ["Foo"], result
+  end
+
+  def test_extract_definitions_falls_back_to_regex_when_ast_engine_unavailable
+    ReactManifest::SymbolExtractor.stubs(:ast_engine_available?).returns(false)
+    assert_includes ReactManifest::SymbolExtractor.extract_definitions("const FooBar = () => {};"), "FooBar"
+  end
+
+  def test_extract_usages_falls_back_to_regex_when_ast_engine_unavailable
+    ReactManifest::SymbolExtractor.stubs(:ast_engine_available?).returns(false)
+    content = "const UsersIndex = () => <button>Show More</button>;\n"
+    # The regex engine cannot tell JSX text apart from a real reference —
+    # this documents the known limitation being fixed by the AST engine.
+    assert_includes ReactManifest::SymbolExtractor.extract_usages(content), "Show"
+  end
+
+  def test_extract_usages_passes_file_path_through_to_ast_engine_for_warnings
+    Rails.logger.expects(:warn).with { |msg| msg.include?("my/file.jsx") }
+    ReactManifest::SymbolExtractor.extract_usages("const Broken = () => {\n  return <div>\n};\n",
+                                                  file_path: "my/file.jsx")
+  end
 end
