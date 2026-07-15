@@ -75,6 +75,9 @@ Both Scanner and Generator delegate all JS symbol work to `SymbolExtractor`.
 - Starts `Watcher` in development if not already running.
 - Includes `ViewHelpers` into `ActionView::Base`.
 - Prepends `react_manifest:generate` as a prerequisite to `assets:precompile`.
+- In development, also reconciles `.gitignore` (adds the manifest-dir ignore entry if
+  missing) via `ReactManifest.reconcile_gitignore!` / `GitignorePatcher`. Dev-only;
+  production never writes to the app tree at boot.
 
 ### Testing
 

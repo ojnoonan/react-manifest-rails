@@ -18,6 +18,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   transitive. `react_manifest:analyze` now lists what was promoted and why. Set
   `config.auto_shared = false` to restore the previous inline behavior.
 
+### Changed
+- Generated `ux_manifests/*.js` are now treated as build artifacts. `react_manifest:setup`
+  and the development boot step add them to `.gitignore` (idempotently) and keep a
+  committed `.keep` so the directory always exists; setup prints a one-time
+  `git rm --cached` to untrack previously-committed manifests. Production is unaffected
+  (manifests regenerate during `assets:precompile`). Opt out with
+  `config.manage_gitignore = false`. Upgrading an existing app requires no manual step:
+  the first dev boot regenerates manifests and ensures the ignore entry.
+
 ## [0.2.34] - 2026-07-02
 
 ### Added
