@@ -183,7 +183,11 @@ module ReactManifest
 
       file_owner.each do |file_path, owner|
         externally_used = file_defs[file_path].any? do |sym|
-          (symbol_used_by_bundles[sym] - [owner]).any?
+          # The symbol_to_file[sym] == file_path guard (a) resolves symbol-name
+          # collisions to the single canonical definer and (b) structurally
+          # excludes isolated_app_dirs files, which are never registered in
+          # symbol_to_file — so an isolated file can never be promoted here.
+          symbol_to_file[sym] == file_path && (symbol_used_by_bundles[sym] - [owner]).any?
         end
         promoted << file_path if externally_used
       end
@@ -191,7 +195,7 @@ module ReactManifest
       worklist = promoted.to_a
       until worklist.empty?
         current = worklist.pop
-        file_uses[current].each do |sym|
+        file_uses.fetch(current, Set.new).each do |sym|
           dep_file = symbol_to_file[sym]
           next unless dep_file
           next if promoted.include?(dep_file)

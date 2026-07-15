@@ -68,8 +68,41 @@ class GeneratorPromotionTest < ReactManifestTest
     ReactManifest::Generator.new(@config).run!
 
     shared = read_manifest("ux_shared.js")
-    assert_equal 1, shared.scan("ux/app/common/leaf\n").size + shared.scan("ux/app/common/leaf$").size,
-                 "leaf should be required exactly once"
-    assert_equal(1, shared.lines.count { |l| l.strip == "//= require ux/app/common/leaf" })
+    assert_equal(1, shared.lines.count { |l| l.strip == "//= require ux/app/common/leaf" },
+                 "leaf should be required exactly once")
+  end
+
+  def test_isolated_app_dir_file_is_not_promoted
+    ReactManifest.configure { |c| c.isolated_app_dirs = ["rvb"] }
+    @config = ReactManifest.configuration
+
+    write_ux("app/rvb/rvb_show.js.jsx", "const Show = () => <div>rvb</div>;\n")
+    write_ux("app/reports/reports_index.js.jsx", "const ReportsIndex = () => <Show />;\n")
+
+    ReactManifest::Generator.new(@config).run!
+
+    refute_includes read_manifest("ux_shared.js"), "ux/app/rvb/rvb_show"
+    assert_includes read_manifest("ux_rvb.js"), "ux/app/rvb/rvb_show"
+  end
+
+  def test_symbol_collision_promotes_only_the_canonical_definer
+    write_ux("app/reports/reports_widget.js.jsx", "const Widget = () => <div>reports</div>;\n")
+    write_ux("app/orders/orders_widget.js.jsx", "const Widget = () => <div>orders</div>;\n")
+    write_ux("app/dashboard/dashboard_index.js.jsx", "const DashboardIndex = () => <Widget />;\n")
+
+    ReactManifest::Generator.new(@config).run!
+
+    shared = read_manifest("ux_shared.js")
+    assert_equal(1, ["ux/app/reports/reports_widget", "ux/app/orders/orders_widget"].count { |p| shared.include?(p) })
+  end
+
+  def test_shared_dir_file_referencing_a_controller_symbol_promotes_it
+    write_ux("app/common/export_form.js.jsx", "const ExportForm = () => <div />;\n")
+    write_ux("components/exporter.js.jsx", "const Exporter = () => <ExportForm />;\n")
+
+    ReactManifest::Generator.new(@config).run!
+
+    assert_includes read_manifest("ux_shared.js"), "ux/app/common/export_form"
+    refute_includes read_manifest("ux_common.js"), "ux/app/common/export_form"
   end
 end
