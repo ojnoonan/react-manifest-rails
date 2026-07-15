@@ -141,12 +141,8 @@ module ReactManifest
     end
 
     def build_controller_context(controller_dirs, shared_dirs)
-      # file_owner, file_defs, and symbol_to_file aren't read yet in this method —
-      # they're groundwork for Task 3's compute_promoted_files.
-      # rubocop:disable Lint/UselessAssignment
       bundle_files, file_owner, file_defs, symbol_to_bundle, symbol_to_file, bundle_own_symbols =
         index_controller_symbols(controller_dirs)
-      # rubocop:enable Lint/UselessAssignment
 
       file_uses = Hash.new { |h, k| h[k] = Set.new }
       symbol_used_by_bundles = Hash.new { |h, k| h[k] = Set.new }
@@ -158,7 +154,13 @@ module ReactManifest
         bundle_files, bundle_own_symbols, file_uses, symbol_to_bundle, external_symbol_to_require
       )
 
-      promoted_files = Set.new
+      promoted_files =
+        if @config.auto_shared?
+          compute_promoted_files(file_owner, file_defs, file_uses,
+                                 symbol_used_by_bundles, symbol_to_file)
+        else
+          Set.new
+        end
 
       always_include_requires =
         build_always_include_requires(bundle_files, dependencies, promoted_files)
@@ -170,6 +172,36 @@ module ReactManifest
         external_requires: external_requires,
         promoted_files: promoted_files
       }
+    end
+
+    # A controller file is promoted to the shared bundle when a symbol it defines
+    # is used by any bundle other than its owner (another controller, an
+    # always_include bundle, or a shared-dir file), then transitively for anything
+    # a promoted file itself depends on. Guarantees each file is emitted once.
+    def compute_promoted_files(file_owner, file_defs, file_uses, symbol_used_by_bundles, symbol_to_file)
+      promoted = Set.new
+
+      file_owner.each do |file_path, owner|
+        externally_used = file_defs[file_path].any? do |sym|
+          (symbol_used_by_bundles[sym] - [owner]).any?
+        end
+        promoted << file_path if externally_used
+      end
+
+      worklist = promoted.to_a
+      until worklist.empty?
+        current = worklist.pop
+        file_uses[current].each do |sym|
+          dep_file = symbol_to_file[sym]
+          next unless dep_file
+          next if promoted.include?(dep_file)
+
+          promoted << dep_file
+          worklist << dep_file
+        end
+      end
+
+      promoted
     end
 
     # Indexes each controller dir's files and the PascalCase symbols they define.
