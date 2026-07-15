@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Auto-promotion: a component defined under `ux/app/<controller>/` but used by any
+  other bundle is now emitted into `ux_shared` (loaded once per page) instead of being
+  inlined into each consumer. This eliminates duplicate top-level `const` declarations
+  ("Identifier X has already been declared") — and the cascading `X is not defined`
+  errors that follow when a SyntaxError aborts a concatenated bundle — for components
+  shared across controllers (e.g. a navbar component pulled in via `always_include`).
+  Files never move; only the `//= require` line's destination changes. Promotion is
+  transitive. `react_manifest:analyze` now lists what was promoted and why. Set
+  `config.auto_shared = false` to restore the previous inline behavior.
+
 ## [0.2.34] - 2026-07-02
 
 ### Added
