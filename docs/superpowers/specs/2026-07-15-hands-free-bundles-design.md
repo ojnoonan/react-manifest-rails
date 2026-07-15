@@ -409,10 +409,19 @@ None blocking.
 - Possible future work: auto-promotion could later gain a "co-load-aware" mode that
   only promotes when two consumers can actually appear on the same page (finer
   leanness), but the current simple rule was chosen deliberately.
-- Observation for a follow-up (out of scope here): `resolve_bundles` emits
+- ~~Observation for a follow-up (out of scope here): `resolve_bundles` emits
   `always_include` bundles as their own script tags *and* `build_controller` inlines
-  their files into each controller manifest. With promotion in place this is not a
-  correctness risk for cross-used files (those move to `ux_shared`), but the
-  separate-tag-plus-inline interaction for an always-include bundle's *private* files
-  should be verified against test 5.7/19 and, if a duplication exists, addressed
-  separately.
+  their files into each controller manifest.~~ **Resolved.** The duplication was real
+  for two cases: an always_include bundle's *private* files (loaded via its own tag
+  **and** inlined into every other controller), and a *collided* symbol whose definer
+  lives in an always_include bundle (the consumer inlined a second definer). Fix:
+  always_include is now delivered *exclusively* by its own `<script>` tag — inlining
+  into controller manifests was removed, `react_component` was taught to emit the
+  always_include tag too (preserving the 0.2.24 symbol-availability guarantee without
+  inlining), and controller dependency resolution treats always_include-provided
+  symbols as already satisfied. Regression coverage lives in
+  `test/react_manifest/generator_promotion_test.rb`
+  (`test_always_include_private_file_not_double_loaded_on_another_page`,
+  `test_always_include_collided_symbol_resolves_to_always_definer_only`) and
+  `test/react_manifest/view_helpers_test.rb`
+  (`test_react_component_emits_always_include_bundle_tag`).

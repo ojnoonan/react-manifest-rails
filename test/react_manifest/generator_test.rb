@@ -149,7 +149,11 @@ class GeneratorRunTest < ReactManifestTest
     assert_includes read_manifest("ux_rvb.js"), "ux/app/rvb/babel.min"
   end
 
-  def test_inlines_always_include_bundle_files_into_controller_manifests
+  def test_always_include_bundle_files_are_not_inlined_into_other_controllers
+    # always_include bundles load on every page via their own <script> tag
+    # (resolve_bundles / react_component). Inlining their files into every
+    # controller manifest would load the same file twice on a page and
+    # double-declare, so ux_users must NOT contain ux_main's files.
     ReactManifest.configure { |c| c.always_include = ["ux_main"] }
 
     main_dir = Rails.root.join("app/assets/javascripts/ux/app/main")
@@ -161,10 +165,13 @@ class GeneratorRunTest < ReactManifestTest
     File.write(users_dir.join("users_index.js.jsx"), "const UsersIndex = () => <div />;\n")
 
     @generator.run!
-    content = read_manifest("ux_users.js")
 
-    assert_includes content, "ux/app/main/main_index"
-    assert_includes content, "ux/app/users/users_index"
+    users = read_manifest("ux_users.js")
+    refute_includes users, "ux/app/main/main_index"
+    assert_includes users, "ux/app/users/users_index"
+
+    # The always_include bundle's own manifest still carries its files.
+    assert_includes read_manifest("ux_main.js"), "ux/app/main/main_index"
   end
 
   def test_idempotency_does_not_change_file_if_content_unchanged

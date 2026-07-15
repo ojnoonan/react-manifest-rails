@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- `always_include` no longer double-declares. Its bundles are delivered on every page
+  by their own `<script>` tag (both `react_bundle_tag`/`resolve_bundles` and
+  `react_component` now emit them), and their files are no longer inlined into each
+  controller manifest. Previously the separate tag plus the inline loaded an
+  always_include bundle's **private** files twice on any other controller's page, and a
+  **collided** symbol whose definer lives in an always_include bundle could pull a
+  second definer into the consumer — both causing "Identifier X has already been
+  declared". Controller dependency resolution now treats symbols provided by an
+  always_include bundle as already satisfied, and skips those bundles when inlining
+  dependencies (legacy `auto_shared = false` path included). The "already provided"
+  set is computed from the exact files the always_include `<script>` tag actually
+  carries (its own non-promoted files plus the canonical dependency files it inlines),
+  not from whole dependency bundles — so a consumer never drops a definer for a symbol
+  that lives in a sibling file the tag does not load. Symbol availability that the
+  previous inlining protected (added in 0.2.24) is preserved by the tag `react_component`
+  now emits.
+- One case remains inherently unresolvable by dependency arithmetic: when an
+  `always_include` bundle *consumes* a collided symbol, its tag inlines the
+  first-writer definer, which also lives in that definer's own bundle manifest, so on
+  the definer's own page the file loads twice. `react_manifest:generate` now emits a
+  warning naming the always_include bundle, the duplicated file/symbol, and the owning
+  bundle, with the fix (rename or relocate the collided symbol). Detected in both the
+  default and legacy (`auto_shared = false`) modes.
+
 ### Added
 - Auto-promotion: a component defined under `ux/app/<controller>/` but used by any
   other bundle is now emitted into `ux_shared` (loaded once per page) instead of being
