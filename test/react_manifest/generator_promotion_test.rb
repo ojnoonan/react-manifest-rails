@@ -178,4 +178,15 @@ class GeneratorPromotionTest < ReactManifestTest
     assert_includes read_manifest("ux_navbar.js"), "ux/app/navbar/navbar_private"
     assert_includes read_manifest("ux_reports.js"), "ux/app/navbar/navbar_private"
   end
+
+  def test_auto_shared_false_restores_legacy_inline_behavior
+    ReactManifest.configure { |c| c.auto_shared = false }
+    write_ux("app/common/export_form.js.jsx", "const ExportForm = () => <div />;\n")
+    write_ux("app/reports/reports_index.js.jsx", "const ReportsIndex = () => <ExportForm />;\n")
+    ReactManifest::Generator.new(@config).run!
+
+    # Legacy: cross-app dep inlined into the consumer, nothing promoted to shared.
+    assert_includes read_manifest("ux_reports.js"), "ux/app/common/export_form"
+    refute_includes read_manifest("ux_shared.js"), "ux/app/common/export_form"
+  end
 end

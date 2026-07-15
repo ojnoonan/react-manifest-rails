@@ -65,9 +65,7 @@ class GeneratorRunTest < ReactManifestTest
     assert content.index("notifications_index") < content.index("notifications_show")
   end
 
-  def test_includes_dependent_controller_files_when_main_uses_component_from_another_app_dir
-    # TODO(Task 5): revert to assert promotion
-    ReactManifest.configure { |c| c.auto_shared = false }
+  def test_promotes_cross_app_component_into_shared_under_default
     dep_dir = Rails.root.join("app/assets/javascripts/ux/app/design_variables")
     main_dir = Rails.root.join("app/assets/javascripts/ux/app/main")
     FileUtils.mkdir_p(dep_dir)
@@ -82,10 +80,11 @@ class GeneratorRunTest < ReactManifestTest
     File.write(main_dir.join("main_index.js.jsx"), main_index_content)
 
     @generator.run!
-    content = read_manifest("ux_main.js")
 
-    assert_includes content, "ux/app/design_variables/design_variable_show"
-    assert_includes content, "ux/app/main/main_index"
+    # Cross-app component is promoted to shared, not inlined into the consumer.
+    assert_includes read_manifest("ux_shared.js"), "ux/app/design_variables/design_variable_show"
+    refute_includes read_manifest("ux_main.js"), "ux/app/design_variables/design_variable_show"
+    assert_includes read_manifest("ux_main.js"), "ux/app/main/main_index"
   end
 
   def test_does_not_include_unrelated_bundle_when_component_name_collides_with_own_bundle_file
