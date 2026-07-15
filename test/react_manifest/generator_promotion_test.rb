@@ -105,4 +105,77 @@ class GeneratorPromotionTest < ReactManifestTest
     assert_includes read_manifest("ux_shared.js"), "ux/app/common/export_form"
     refute_includes read_manifest("ux_common.js"), "ux/app/common/export_form"
   end
+
+  # ---- single-emission invariant -------------------------------------------
+
+  def requires_in(name)
+    read_manifest(name).lines.filter_map do |l|
+      l.strip.start_with?("//= require") ? l.strip.sub("//= require ", "") : nil
+    end
+  end
+
+  def controller_manifest_names
+    Dir.glob(File.join(@config.abs_manifest_dir, "ux_*.js"))
+       .map { |p| File.basename(p) }
+       .reject { |n| n == "ux_shared.js" }
+  end
+
+  def test_no_require_appears_in_both_shared_and_a_controller_bundle
+    write_ux("app/common/export_form.js.jsx", "const ExportForm = () => <div />;\n")
+    write_ux("app/reports/reports_index.js.jsx", "const ReportsIndex = () => <ExportForm />;\n")
+    ReactManifest::Generator.new(@config).run!
+
+    shared = requires_in("ux_shared.js").to_set
+    controller_manifest_names.each do |name|
+      overlap = shared & requires_in(name).to_set
+      assert_empty overlap, "#{name} duplicates shared requires: #{overlap.to_a}"
+    end
+  end
+
+  def test_no_require_appears_in_two_controller_bundles
+    write_ux("app/common/export_form.js.jsx", "const ExportForm = () => <div />;\n")
+    write_ux("app/reports/reports_index.js.jsx", "const ReportsIndex = () => <ExportForm />;\n")
+    write_ux("app/billing/billing_index.js.jsx", "const BillingIndex = () => <ExportForm />;\n")
+    ReactManifest::Generator.new(@config).run!
+
+    seen = {}
+    controller_manifest_names.each do |name|
+      requires_in(name).each do |req|
+        assert_nil seen[req], "#{req} appears in #{seen[req]} and #{name}"
+        seen[req] = name
+      end
+    end
+  end
+
+  # ---- regression: the reported navbar + always_include bug -----------------
+
+  def test_navbar_always_include_no_longer_double_declares_shared_component
+    ReactManifest.configure { |c| c.always_include = ["ux_navbar"] }
+    write_ux("app/notification/show_component.js.jsx", "const Show = () => <div />;\n")
+    write_ux("app/notification/notifications_index.js.jsx", "const NotificationsIndex = () => <div />;\n")
+    write_ux("app/navbar/navbar.js.jsx", "const Navbar = () => <Show />;\n")
+    ReactManifest::Generator.new(@config).run!
+
+    assert_includes read_manifest("ux_shared.js"), "ux/app/notification/show_component"
+    refute_includes read_manifest("ux_navbar.js"), "ux/app/notification/show_component"
+    refute_includes read_manifest("ux_notification.js"), "ux/app/notification/show_component"
+    # notification-specific file stays put (not over-hoisted)
+    assert_includes read_manifest("ux_notification.js"), "ux/app/notification/notifications_index"
+  end
+
+  # ---- always_include private file still loads, not promoted ----------------
+
+  def test_always_include_private_file_is_not_promoted_and_loads_everywhere
+    ReactManifest.configure { |c| c.always_include = ["ux_navbar"] }
+    write_ux("app/navbar/navbar.js.jsx", "const Navbar = () => <NavbarPrivate />;\n")
+    write_ux("app/navbar/navbar_private.js.jsx", "const NavbarPrivate = () => <div />;\n")
+    write_ux("app/reports/reports_index.js.jsx", "const ReportsIndex = () => <div />;\n")
+    ReactManifest::Generator.new(@config).run!
+
+    # navbar_private is used only inside navbar -> not promoted; stays in ux_navbar
+    # and is force-included into other controllers via always_include.
+    refute_includes read_manifest("ux_shared.js"), "ux/app/navbar/navbar_private"
+    assert_includes read_manifest("ux_navbar.js"), "ux/app/navbar/navbar_private"
+    assert_includes read_manifest("ux_reports.js"), "ux/app/navbar/navbar_private"
+  end
 end
