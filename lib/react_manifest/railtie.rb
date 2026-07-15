@@ -26,6 +26,12 @@ module ReactManifest
         Rails.logger&.warn(error)
         $stdout.puts(error) if config.stdout_logging?
       end
+
+      begin
+        ReactManifest.reconcile_gitignore!(config)
+      rescue StandardError => e
+        Rails.logger&.warn("[ReactManifest] gitignore reconcile failed: #{e.message}")
+      end
     end
 
     # Expose config as Rails.application.config.react_manifest

@@ -80,6 +80,22 @@ namespace :react_manifest do
       puts "   ✓ #{written} written, #{unchanged} unchanged"
     end
 
+    # 6. Ensure generated manifests are gitignored
+    puts "\n6) Gitignoring generated manifests..."
+    if config.manage_gitignore?
+      patcher = ReactManifest::GitignorePatcher.new(config)
+      result  = patcher.patch!
+      if result.appended
+        puts "   ✓ added #{patcher.pattern} to .gitignore"
+        puts "   → one-time cleanup for previously-committed manifests:"
+        puts "     git rm --cached #{File.dirname(patcher.pattern)}/*.js"
+      else
+        puts "   ✓ #{patcher.pattern} already ignored"
+      end
+    else
+      puts "   (skipped — config.manage_gitignore is false)"
+    end
+
     # Done
     puts "\n=== Setup #{'(dry-run) ' if config.dry_run?}complete ==="
     puts "Start your Rails server — react_bundle_tag will serve the right JS per controller." unless config.dry_run?
