@@ -1,3 +1,3 @@
 module ReactManifest
-  VERSION = "0.2.34".freeze
+  VERSION = "0.3.0".freeze
 end

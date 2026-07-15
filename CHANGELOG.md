@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-15
+
 ### Fixed
 - `always_include` no longer double-declares. Its bundles are delivered on every page
   by their own `<script>` tag (both `react_bundle_tag`/`resolve_bundles` and
