@@ -130,6 +130,14 @@ namespace :react_manifest do
     scan_result    = scanner.scan(classification)
     dep_map        = ReactManifest::DependencyMap.new(scan_result)
     dep_map.print_report
+
+    reasons = ReactManifest::Generator.new(config).promotion_reasons
+    unless reasons.empty?
+      puts "\nPromotions (app/ components emitted into #{config.shared_bundle}):"
+      reasons.sort.each do |req, bundles|
+        puts "  #{req}  <- used by: #{bundles.sort.join(', ')}"
+      end
+    end
   end
 
   desc "Analyze application*.js files — show what migrate_application would change"

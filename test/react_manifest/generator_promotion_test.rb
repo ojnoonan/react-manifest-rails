@@ -189,4 +189,15 @@ class GeneratorPromotionTest < ReactManifestTest
     assert_includes read_manifest("ux_reports.js"), "ux/app/common/export_form"
     refute_includes read_manifest("ux_shared.js"), "ux/app/common/export_form"
   end
+
+  def test_promotion_reasons_are_exposed_for_reporting
+    write_ux("app/common/export_form.js.jsx", "const ExportForm = () => <div />;\n")
+    write_ux("app/reports/reports_index.js.jsx", "const ReportsIndex = () => <ExportForm />;\n")
+
+    gen = ReactManifest::Generator.new(@config)
+    reasons = gen.promotion_reasons
+    key = "ux/app/common/export_form"
+    assert reasons.key?(key), "expected #{key} in promotion reasons: #{reasons.keys}"
+    assert_includes reasons[key], "ux_reports"
+  end
 end

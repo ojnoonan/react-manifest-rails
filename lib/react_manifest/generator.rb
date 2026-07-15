@@ -42,6 +42,14 @@ module ReactManifest
       @classifier = TreeClassifier.new(config)
     end
 
+    # After a run (or on demand), maps a promoted file's require path to the set of
+    # bundle names that forced its promotion. Used by react_manifest:analyze.
+    def promotion_reasons
+      classification = @classifier.classify
+      build_controller_context(classification.controller_dirs, classification.shared_dirs)
+      @promotion_reasons || {}
+    end
+
     # Run full generation. Returns array of {path:, status:} hashes.
     #
     # All manifest content is built first (no filesystem writes), then written
@@ -178,18 +186,27 @@ module ReactManifest
     # is used by any bundle other than its owner (another controller, an
     # always_include bundle, or a shared-dir file), then transitively for anything
     # a promoted file itself depends on. Guarantees each file is emitted once.
+    # Also records, per promoted file, the set of bundle names that forced the
+    # promotion (into @promotion_reasons) for react_manifest:analyze reporting.
     def compute_promoted_files(file_owner, file_defs, file_uses, symbol_used_by_bundles, symbol_to_file)
       promoted = Set.new
+      reasons = Hash.new { |h, k| h[k] = Set.new }
 
       file_owner.each do |file_path, owner|
-        externally_used = file_defs[file_path].any? do |sym|
+        forcing = Set.new
+        file_defs[file_path].each do |sym|
           # The symbol_to_file[sym] == file_path guard (a) resolves symbol-name
           # collisions to the single canonical definer and (b) structurally
           # excludes isolated_app_dirs files, which are never registered in
           # symbol_to_file — so an isolated file can never be promoted here.
-          symbol_to_file[sym] == file_path && (symbol_used_by_bundles[sym] - [owner]).any?
+          next unless symbol_to_file[sym] == file_path
+
+          (symbol_used_by_bundles[sym] - [owner]).each { |b| forcing << b }
         end
-        promoted << file_path if externally_used
+        next if forcing.empty?
+
+        promoted << file_path
+        reasons[relative_require_path(file_path)] = forcing
       end
 
       worklist = promoted.to_a
@@ -201,10 +218,12 @@ module ReactManifest
           next if promoted.include?(dep_file)
 
           promoted << dep_file
+          reasons[relative_require_path(dep_file)] << "(transitive)"
           worklist << dep_file
         end
       end
 
+      @promotion_reasons = reasons.transform_values(&:to_a)
       promoted
     end
 
