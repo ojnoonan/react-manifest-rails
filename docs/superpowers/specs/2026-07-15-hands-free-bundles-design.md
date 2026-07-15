@@ -120,8 +120,10 @@ promoted = transitive_closure(seed):
 - `build_shared(shared_dirs)` → requires = files from shared dirs **+**
   `promoted_files`, `uniq`, sorted. (Promoted files stay physically in their
   `ux/app/...` location; only the `//= require` line lives in `ux_shared.js`.)
-- `build_controller(ctrl)` → requires = the controller's own files **minus**
-  `promoted_files`, plus `external_requires`. 
+- `build_controller(ctrl)` → requires = `always_include_reqs` +
+  `external_requires` + the controller's own files, **each minus**
+  `promoted_files`, `uniq`. (The `always_include` feature is retained as-is; only
+  the removed cross-app `dep_requires` — see §3.5 — leaves the formula.)
 - `build_always_include_requires` → the always-include set **minus**
   `promoted_files` (else a promoted file would sit in `ux_shared` *and* the
   always-include set → duplication).
@@ -306,6 +308,15 @@ fixtures under `test/fixtures/dummy/.../ux/` model the scenarios below.
 
 ## 7. Open questions
 
-None blocking. Possible future work: auto-promotion could later gain a
-"co-load-aware" mode that only promotes when two consumers can actually appear on the
-same page (finer leanness), but the current simple rule was chosen deliberately.
+None blocking.
+
+- Possible future work: auto-promotion could later gain a "co-load-aware" mode that
+  only promotes when two consumers can actually appear on the same page (finer
+  leanness), but the current simple rule was chosen deliberately.
+- Observation for a follow-up (out of scope here): `resolve_bundles` emits
+  `always_include` bundles as their own script tags *and* `build_controller` inlines
+  their files into each controller manifest. With promotion in place this is not a
+  correctness risk for cross-used files (those move to `ux_shared`), but the
+  separate-tag-plus-inline interaction for an always-include bundle's *private* files
+  should be verified against test 5.7/19 and, if a duplication exists, addressed
+  separately.
