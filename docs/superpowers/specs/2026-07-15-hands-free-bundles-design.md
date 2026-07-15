@@ -48,6 +48,9 @@ every precompile), so committing them clutters diffs and invites manual edits.
 2. Preserve lean controller bundles for genuinely private code.
 3. Stop generated manifests from cluttering git and from being dev-editable, while
    keeping production correct.
+4. **Zero-touch upgrade:** dropping the new version into an existing app just works —
+   it self-reconciles on boot (regenerates manifests, ensures the `.gitignore` entry)
+   with no manual `setup` step and without silently rewriting the user's layouts.
 
 **Non-goals**
 
@@ -189,6 +192,47 @@ to be committed — they are a build artifact analogous to `public/assets/`.
 Boot-time generation remains development-only; production relies solely on the
 precompile hook (correct: no prod process writes into the app dir at boot).
 
+### 4.2 Upgrade & zero-touch migration safety
+
+Dropping the new gem version into an existing app must "just work" with **no manual
+step** — an upgrading user should not have to run `react_manifest:setup` or hand-edit
+anything for the app to keep functioning and pick up the new behavior.
+
+**Automatic dev-boot reconciliation.** The Railtie's development boot step
+(`ensure_manifests`) is extended to perform an idempotent reconcile, each part
+guarded and best-effort (a failure logs a warning and never aborts boot):
+
+1. **Regenerate manifests** (existing behavior). Old inline-format manifests
+   (cross-used files duplicated across bundles) are rewritten to the promotion layout
+   automatically; the digest comparison means only manifests whose content actually
+   changed are written. This is what converts a freshly-upgraded app from the broken
+   duplicated state to the correct one on the first boot.
+2. **Ensure `.gitignore`** contains `app/assets/javascripts/ux_manifests/*.js` —
+   append it if absent (idempotent: never appended twice), and log the one line it
+   added. Controlled by `config.manage_gitignore` (default `true`).
+3. **Ensure `.keep`** exists in the manifest dir so the directory survives a fresh
+   clone before first generation.
+4. **Untrack notice, not action.** If old manifests are still tracked by git, log a
+   single notice with the exact `git rm --cached app/assets/javascripts/ux_manifests/*.js`
+   command. The gem never mutates the git index/history itself.
+
+**Boundaries (what auto-reconcile does *not* do):**
+
+- It does **not** patch `manifest.js` (`link_tree`), the layout (`react_bundle_tag`),
+  or `application.js` on boot. Those remain `react_manifest:setup`'s job — they are a
+  first-install concern, and an already-working app that is merely *upgrading* already
+  has them. (An upgrade path must not silently rewrite the user's layouts.)
+- It runs in **development only**; production never mutates `.gitignore` or the app
+  tree at boot (it relies on the `assets:precompile` hook, which already regenerates).
+- It performs **no git operations**.
+- Legacy pre-`manifest_subdir` layouts (manifests written to the output-dir root) are
+  still migrated into `ux_manifests/` automatically by the existing
+  `migrate_legacy_manifests!` path — reconcile does not regress that.
+
+**Config:** `config.manage_gitignore` (default `true`) — set `false` to opt out of the
+automatic `.gitignore` management (e.g. monorepos with a centrally-managed ignore
+file).
+
 ## 5. Testing plan (comprehensive, edge cases first-class)
 
 Tests use the existing fixture harness (`with_temp_rails_root { }`, FakeRails). New
@@ -294,6 +338,32 @@ fixtures under `test/fixtures/dummy/.../ux/` model the scenarios below.
 31. The one-time `git rm --cached` command is **printed**, and the task performs no
     git mutation itself.
 
+### 5.13 Upgrade & zero-touch migration
+
+32. **Old-format upgrade** — seed committed manifests in the pre-feature inline layout
+    (a cross-used file duplicated across two controller bundles); boot the new gem and
+    assert manifests are regenerated to the promotion layout, with the duplicated file
+    now present only in `ux_shared`. No manual step invoked.
+33. **Auto-gitignore append** — `.gitignore` lacks the pattern → boot appends exactly
+    one line; a second boot does **not** append again (idempotent).
+34. **Auto-gitignore respects existing entry** — pattern already present (in any
+    equivalent form) → not appended.
+35. **`config.manage_gitignore = false`** → `.gitignore` left untouched on boot.
+36. **`.keep` ensured** — manifest dir missing `.keep` → boot creates it.
+37. **Untrack notice** — old manifests still tracked → boot logs the `git rm --cached`
+    command and performs no git operation (verify no index change).
+38. **Legacy root layout migration** — manifests at the output-dir root (pre-
+    `manifest_subdir`) → boot migrates them into `ux_manifests/` (regression guard on
+    `migrate_legacy_manifests!`).
+39. **Reconcile idempotency** — a second boot with everything already in place writes
+    nothing, appends nothing, logs no changes.
+40. **Boot resilience** — a failure in any reconcile step (e.g. unwritable
+    `.gitignore`) logs a warning and does **not** abort boot or prevent manifest
+    generation.
+41. **Production boot** — with `Rails.env.production?`, reconcile performs no
+    `.gitignore` mutation and no app-tree writes (generation happens via the
+    precompile hook only).
+
 ## 6. Risks & mitigations
 
 - **`ux_shared` growth** — accepted by design (correctness over payload for shared
@@ -305,6 +375,10 @@ fixtures under `test/fixtures/dummy/.../ux/` model the scenarios below.
   precompile runs. Documented as the precondition for gitignoring.
 - **Behavior change for other gem users** — mitigated by the minor bump + changelog +
   `config.auto_shared = false` escape hatch.
+- **Automatic `.gitignore` editing** — the gem writes to the app's `.gitignore` on dev
+  boot. Mitigated by: idempotent single-line append, one-time log of what it added,
+  `config.manage_gitignore = false` opt-out, dev-only, and best-effort (a write
+  failure warns without breaking boot). It never runs git commands.
 
 ## 7. Open questions
 
