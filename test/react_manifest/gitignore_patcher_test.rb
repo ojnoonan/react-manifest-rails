@@ -46,4 +46,10 @@ class GitignorePatcherTest < ReactManifestTest
     content = File.read(gitignore_path)
     assert_includes content, "/log\napp/assets/javascripts/ux_manifests/*.js"
   end
+
+  def test_keep_is_not_recreated_when_present
+    @patcher.patch!
+    result = ReactManifest::GitignorePatcher.new(@config).patch!
+    refute result.keep_created
+  end
 end
