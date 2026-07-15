@@ -24,6 +24,11 @@ module ReactManifest
     # Bundle name for auto-generated shared bundle (all non-app/ dirs)
     attr_accessor :shared_bundle
 
+    # When true (default), a component defined under app_dir but used by any other
+    # bundle is emitted into the shared bundle (loaded once per page) instead of
+    # being inlined into each consumer. Set false to restore legacy inlining.
+    attr_accessor :auto_shared
+
     # Bundles always prepended by react_bundle_tag (e.g. ["ux_main"])
     attr_accessor :always_include
 
@@ -102,6 +107,7 @@ module ReactManifest
       @output_dir        = "app/assets/javascripts"
       @manifest_subdir   = "ux_manifests"
       @shared_bundle     = "ux_shared"
+      @auto_shared       = true
       @always_include    = []
       @ignore            = []
       @isolated_app_dirs = []
@@ -117,6 +123,10 @@ module ReactManifest
 
     def dry_run?
       !!@dry_run
+    end
+
+    def auto_shared?
+      !!@auto_shared
     end
 
     def verbose?
