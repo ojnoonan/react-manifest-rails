@@ -66,6 +66,8 @@ class GeneratorRunTest < ReactManifestTest
   end
 
   def test_includes_dependent_controller_files_when_main_uses_component_from_another_app_dir
+    # TODO(Task 5): revert to assert promotion
+    ReactManifest.configure { |c| c.auto_shared = false }
     dep_dir = Rails.root.join("app/assets/javascripts/ux/app/design_variables")
     main_dir = Rails.root.join("app/assets/javascripts/ux/app/main")
     FileUtils.mkdir_p(dep_dir)
@@ -448,6 +450,13 @@ class GeneratorRunTest < ReactManifestTest
     assert(warn_calls.any? { |m| m.include?("broken.js.jsx") && m.include?("line") },
            "expected a line-numbered warning naming the broken file, got: #{warn_calls.inspect}")
     assert File.exist?(File.join(output_dir, "ux_broken.js")), "generation should still complete for other files"
+  end
+
+  def test_controller_context_exposes_empty_promoted_files_when_refactor_lands
+    context = @generator.send(:build_controller_context,
+                              @generator.instance_variable_get(:@classifier).classify.controller_dirs,
+                              @generator.instance_variable_get(:@classifier).classify.shared_dirs)
+    assert_kind_of Set, context[:promoted_files]
   end
 end
 

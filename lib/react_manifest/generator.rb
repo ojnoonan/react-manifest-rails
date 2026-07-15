@@ -49,10 +49,10 @@ module ReactManifest
     # written and others stale/missing.
     def run!
       classification = @classifier.classify
-      controller_context = build_controller_context(classification.controller_dirs)
+      controller_context = build_controller_context(classification.controller_dirs, classification.shared_dirs)
 
       # Phase 1: build all content in memory — no I/O.
-      shared_manifest = build_shared(classification.shared_dirs)
+      shared_manifest = build_shared(classification.shared_dirs, controller_context[:promoted_files])
       manifests = [shared_manifest] + classification.controller_dirs.map do |ctrl|
         build_controller(ctrl, controller_context)
       end
@@ -98,10 +98,9 @@ module ReactManifest
 
     # ------------------------------------------------------------------ shared
 
-    def build_shared(shared_dirs)
+    def build_shared(shared_dirs, promoted_files = Set.new)
       lines = header_lines
-      reqs = shared_dirs
-             .flat_map { |d| js_files_in(d[:path]) }
+      reqs = (shared_dirs.flat_map { |d| js_files_in(d[:path]) } + promoted_files.to_a)
              .map { |f| normalize_require_path(relative_require_path(f)) }
              .uniq
              .sort
@@ -119,11 +118,16 @@ module ReactManifest
 
     def build_controller(ctrl, controller_context)
       lines = header_lines
+      promoted = controller_context[:promoted_files]
       always_include_reqs = controller_context[:always_include_requires].fetch(ctrl[:bundle_name], [])
-      dep_requires = controller_dependency_requires(ctrl[:bundle_name], controller_context)
+      dep_requires = if @config.auto_shared?
+                       []
+                     else
+                       controller_dependency_requires(ctrl[:bundle_name], controller_context)
+                     end
       ext_reqs = controller_context[:external_requires].fetch(ctrl[:bundle_name], Set.new).to_a.sort
 
-      files = js_files_in(ctrl[:path])
+      files = js_files_in(ctrl[:path]).reject { |f| promoted.include?(f) }
       own_requires = files.map { |f| relative_require_path(f) }
       all_requires = (always_include_reqs + dep_requires + ext_reqs + own_requires).uniq
 
@@ -136,66 +140,132 @@ module ReactManifest
       { filename: "#{ctrl[:bundle_name]}.js", content: "#{lines.join("\n")}\n" }
     end
 
-    def build_controller_context(controller_dirs)
+    def build_controller_context(controller_dirs, shared_dirs)
+      # file_owner, file_defs, and symbol_to_file aren't read yet in this method —
+      # they're groundwork for Task 3's compute_promoted_files.
+      # rubocop:disable Lint/UselessAssignment
+      bundle_files, file_owner, file_defs, symbol_to_bundle, symbol_to_file, bundle_own_symbols =
+        index_controller_symbols(controller_dirs)
+      # rubocop:enable Lint/UselessAssignment
+
+      file_uses = Hash.new { |h, k| h[k] = Set.new }
+      symbol_used_by_bundles = Hash.new { |h, k| h[k] = Set.new }
+      record_symbol_usages(bundle_files, shared_dirs, file_uses, symbol_used_by_bundles)
+
+      external_symbol_to_require = index_external_symbols(symbol_to_bundle)
+
+      dependencies, external_requires = build_dependency_graph(
+        bundle_files, bundle_own_symbols, file_uses, symbol_to_bundle, external_symbol_to_require
+      )
+
+      promoted_files = Set.new
+
+      always_include_requires =
+        build_always_include_requires(bundle_files, dependencies, promoted_files)
+
+      {
+        bundle_files: bundle_files,
+        dependencies: dependencies,
+        always_include_requires: always_include_requires,
+        external_requires: external_requires,
+        promoted_files: promoted_files
+      }
+    end
+
+    # Indexes each controller dir's files and the PascalCase symbols they define.
+    # Returns [bundle_files, file_owner, file_defs, symbol_to_bundle, symbol_to_file,
+    # bundle_own_symbols].
+    def index_controller_symbols(controller_dirs)
       bundle_files = {}
+      file_owner = {}
+      file_defs = Hash.new { |h, k| h[k] = Set.new }
       symbol_to_bundle = {}
+      symbol_to_file = {}
       bundle_own_symbols = Hash.new { |h, k| h[k] = Set.new }
-      external_symbol_to_require = {}
-      dependencies = Hash.new { |h, k| h[k] = Set.new }
-      external_requires = Hash.new { |h, k| h[k] = Set.new }
 
       controller_dirs.each do |ctrl|
-        # Index controller-defined symbols for cross-app detection
         bundle_name = ctrl[:bundle_name]
         files = js_files_in(ctrl[:path])
         bundle_files[bundle_name] = files
-
         isolated = @config.isolated_app_dirs.include?(ctrl[:name])
 
         files.each do |file_path|
+          file_owner[file_path] = bundle_name
           extract_defined_symbols(file_path).each do |sym|
             next unless sym.match?(/\A[A-Z][A-Za-z0-9_]*\z/)
 
-            # Isolated dirs never register into the shared symbol index, so
-            # no other bundle can ever be inferred to depend on them —
-            # regardless of what their own symbol names happen to collide
-            # with (regex-based usage detection can't tell a real component
-            # reference from an unrelated word appearing as plain JSX text).
-            symbol_to_bundle[sym] ||= bundle_name unless isolated
+            file_defs[file_path] << sym
+            # Isolated dirs never register into the shared symbol index, so no
+            # other bundle can ever be inferred to depend on them.
+            unless isolated
+              symbol_to_bundle[sym] ||= bundle_name
+              symbol_to_file[sym]   ||= file_path
+            end
             bundle_own_symbols[bundle_name] << sym
           end
         end
       end
 
-      # Index symbols from external_roots dirs
+      [bundle_files, file_owner, file_defs, symbol_to_bundle, symbol_to_file, bundle_own_symbols]
+    end
+
+    # Records, per controller file and per bundle, which symbols are used —
+    # plus a pseudo-bundle entry (config.shared_bundle) for any controller
+    # symbol referenced from a shared-dir file (shared code loads on every
+    # page, so that symbol's owning file must be treated as externally used).
+    def record_symbol_usages(bundle_files, shared_dirs, file_uses, symbol_used_by_bundles)
+      bundle_files.each do |bundle_name, files|
+        files.each do |file_path|
+          extract_used_component_symbols(file_path).each do |sym|
+            file_uses[file_path] << sym
+            symbol_used_by_bundles[sym] << bundle_name
+          end
+        end
+      end
+
+      shared_dirs.each do |dir|
+        js_files_in(dir[:path]).each do |file_path|
+          extract_used_component_symbols(file_path).each do |sym|
+            symbol_used_by_bundles[sym] << @config.shared_bundle
+          end
+        end
+      end
+    end
+
+    # Indexes symbols from external_roots dirs, then lets explicit
+    # external_providers win over scanned roots on symbol conflicts.
+    def index_external_symbols(symbol_to_bundle)
+      external_symbol_to_require = {}
+
       @config.external_roots.each do |root_path|
         abs_root = abs_external_root(root_path)
         external_js_files_in(abs_root).each do |file_path|
           req_path = relative_require_path(file_path)
-
           warn_on_external_controller_references(file_path, symbol_to_bundle)
-
           extract_defined_symbols(file_path).each do |sym|
             external_symbol_to_require[sym] ||= req_path
           end
         end
       end
 
-      # Explicit external_providers win over scanned roots on symbol conflicts
       @config.external_providers.each do |sym, req_path|
         external_symbol_to_require[sym] = req_path
       end
 
-      # Compute per-bundle cross-app and external dependencies
+      external_symbol_to_require
+    end
+
+    # Cross-app dependency graph + external requires (dependencies kept for
+    # reporting). Returns [dependencies, external_requires].
+    def build_dependency_graph(bundle_files, bundle_own_symbols, file_uses, symbol_to_bundle,
+                               external_symbol_to_require)
+      dependencies = Hash.new { |h, k| h[k] = Set.new }
+      external_requires = Hash.new { |h, k| h[k] = Set.new }
+
       bundle_files.each do |bundle_name, files|
         own_symbols = bundle_own_symbols[bundle_name]
-
         files.each do |file_path|
-          extract_used_component_symbols(file_path).each do |sym|
-            # A symbol the bundle defines itself (in any of its own files) is
-            # always satisfied locally — never attribute it to another bundle
-            # or an external provider just because that symbol name happens
-            # to collide with something defined elsewhere.
+          file_uses[file_path].each do |sym|
             next if own_symbols.include?(sym)
 
             dep_bundle = symbol_to_bundle[sym]
@@ -207,14 +277,7 @@ module ReactManifest
         end
       end
 
-      always_include_requires = build_always_include_requires(bundle_files, dependencies)
-
-      {
-        bundle_files: bundle_files,
-        dependencies: dependencies,
-        always_include_requires: always_include_requires,
-        external_requires: external_requires
-      }
+      [dependencies, external_requires]
     end
 
     def controller_dependency_requires(bundle_name, controller_context)
@@ -245,7 +308,7 @@ module ReactManifest
       ordered
     end
 
-    def build_always_include_requires(bundle_files, dependencies)
+    def build_always_include_requires(bundle_files, dependencies, promoted_files)
       bundles = @config.always_include.map(&:to_s).reject(&:empty?).uniq
       return Hash.new { |h, k| h[k] = [] } if bundles.empty?
 
@@ -260,6 +323,8 @@ module ReactManifest
           transitive = [always_bundle] + transitive_dependencies(always_bundle, dependencies)
           transitive.each do |dep_bundle|
             bundle_files.fetch(dep_bundle, []).each do |abs_path|
+              next if promoted_files.include?(abs_path)
+
               requires << relative_require_path(abs_path)
             end
           end
