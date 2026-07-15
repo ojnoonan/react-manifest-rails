@@ -84,6 +84,28 @@ A controller-owned file is **promoted** to `ux_shared` when either:
 Files used only within their owning controller are **not** promoted; they stay in
 that controller's bundle.
 
+**Collision safety (multi-definer names).** A symbol defined in **two or more**
+non-isolated controller dirs is *collided* (genuinely ambiguous — regex/AST can't
+know which one a consumer meant). Promoting one definer into the always-loaded shared
+bundle would collide with the other definer on its own page, re-creating the very
+double-declaration this feature removes. So:
+
+- Any file that **defines** a collided symbol is never promoted. Neither is any file
+  that **transitively depends on** such a file (it can't live in `ux_shared` if a
+  dependency can't) — a *taint closure*.
+- Collided names fall back to the legacy first-writer semantics: each definer stays in
+  its own bundle, and a consumer that uses the name inlines the first-defined file.
+
+**Dependency inlining under promotion is file-level and transitive.** When
+`auto_shared` is on, a controller no longer inlines a whole dependency *bundle*.
+Instead it inlines exactly the canonical files for the symbols it uses that are **not**
+satisfied by `ux_shared` (i.e. collided/unpromoted files), followed transitively.
+A coarse bundle-level inline would drag unrelated files of a dependency bundle into a
+consumer — and if that consumer is an `always_include` bundle, those unrelated files
+would then double-declare against their home bundle on its own page. File-level
+resolution avoids this. With `auto_shared = false`, the exact legacy whole-bundle
+inline is retained.
+
 ### 3.3 Algorithm
 
 Computed in `Generator#build_controller_context` (which already builds the symbol
