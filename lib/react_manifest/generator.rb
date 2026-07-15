@@ -129,7 +129,7 @@ module ReactManifest
       promoted = controller_context[:promoted_files]
       always_include_reqs = controller_context[:always_include_requires].fetch(ctrl[:bundle_name], [])
       dep_requires = if @config.auto_shared?
-                       []
+                       promoted_aware_dependency_requires(ctrl[:bundle_name], controller_context)
                      else
                        controller_dependency_requires(ctrl[:bundle_name], controller_context)
                      end
@@ -149,12 +149,16 @@ module ReactManifest
     end
 
     def build_controller_context(controller_dirs, shared_dirs)
-      bundle_files, file_owner, file_defs, symbol_to_bundle, symbol_to_file, bundle_own_symbols =
-        index_controller_symbols(controller_dirs)
+      bundle_files, file_owner, file_defs, symbol_to_bundle, symbol_to_file,
+      symbol_definers, bundle_own_symbols = index_controller_symbols(controller_dirs)
 
       file_uses = Hash.new { |h, k| h[k] = Set.new }
       symbol_used_by_bundles = Hash.new { |h, k| h[k] = Set.new }
       record_symbol_usages(bundle_files, shared_dirs, file_uses, symbol_used_by_bundles)
+
+      collided = symbol_definers.each_with_object(Set.new) do |(sym, files), acc|
+        acc << sym if files.size >= 2
+      end
 
       external_symbol_to_require = index_external_symbols(symbol_to_bundle)
 
@@ -162,10 +166,14 @@ module ReactManifest
         bundle_files, bundle_own_symbols, file_uses, symbol_to_bundle, external_symbol_to_require
       )
 
+      symbol_index = {
+        file_defs: file_defs,
+        symbol_to_file: symbol_to_file,
+        symbol_used_by_bundles: symbol_used_by_bundles
+      }
       promoted_files =
         if @config.auto_shared?
-          compute_promoted_files(file_owner, file_defs, file_uses,
-                                 symbol_used_by_bundles, symbol_to_file)
+          compute_promoted_files(file_owner, file_uses, symbol_index, collided)
         else
           Set.new
         end
@@ -178,27 +186,68 @@ module ReactManifest
         dependencies: dependencies,
         always_include_requires: always_include_requires,
         external_requires: external_requires,
-        promoted_files: promoted_files
+        promoted_files: promoted_files,
+        file_uses: file_uses,
+        symbol_to_file: symbol_to_file,
+        bundle_own_symbols: bundle_own_symbols
       }
     end
 
-    # A controller file is promoted to the shared bundle when a symbol it defines
-    # is used by any bundle other than its owner (another controller, an
-    # always_include bundle, or a shared-dir file), then transitively for anything
-    # a promoted file itself depends on. Guarantees each file is emitted once.
-    # Also records, per promoted file, the set of bundle names that forced the
-    # promotion (into @promotion_reasons) for react_manifest:analyze reporting.
-    def compute_promoted_files(file_owner, file_defs, file_uses, symbol_used_by_bundles, symbol_to_file)
+    # Files that can never be promoted to ux_shared: any file defining a "collided"
+    # symbol (a name with 2+ app-dir definers — promoting one copy into the always-
+    # loaded shared bundle would double-declare against the other copy on its page),
+    # plus any file that transitively depends on such a file (it can't live in shared
+    # if a dependency can't). These fall back to legacy per-consumer inlining.
+    def unpromotable_files(file_owner, file_defs, file_uses, symbol_to_file, collided)
+      unpromotable = Set.new
+      file_owner.each_key do |file_path|
+        unpromotable << file_path if file_defs[file_path].any? { |s| collided.include?(s) }
+      end
+
+      loop do
+        added = false
+        file_owner.each_key do |file_path|
+          next if unpromotable.include?(file_path)
+
+          taints = file_uses.fetch(file_path, Set.new).any? do |sym|
+            dep = symbol_to_file[sym]
+            dep && unpromotable.include?(dep)
+          end
+          if taints
+            unpromotable << file_path
+            added = true
+          end
+        end
+        break unless added
+      end
+
+      unpromotable
+    end
+
+    # A controller file is promoted to the shared bundle when a symbol it canonically
+    # defines is used by a bundle other than its owner, then transitively for anything
+    # a promoted file depends on. Collided/tainted files (see unpromotable_files) are
+    # never promoted. Records why each file was promoted for react_manifest:analyze.
+    #
+    # symbol_index bundles {file_defs:, symbol_to_file:, symbol_used_by_bundles:} into
+    # one param so this stays under Metrics/ParameterLists (rubocop flags 6 positional
+    # args) without changing the underlying algorithm.
+    def compute_promoted_files(file_owner, file_uses, symbol_index, collided)
+      file_defs = symbol_index[:file_defs]
+      symbol_to_file = symbol_index[:symbol_to_file]
+      symbol_used_by_bundles = symbol_index[:symbol_used_by_bundles]
+      unpromotable = unpromotable_files(file_owner, file_defs, file_uses, symbol_to_file, collided)
       promoted = Set.new
       reasons = Hash.new { |h, k| h[k] = Set.new }
 
       file_owner.each do |file_path, owner|
+        next if unpromotable.include?(file_path)
+
         forcing = Set.new
         file_defs[file_path].each do |sym|
-          # The symbol_to_file[sym] == file_path guard (a) resolves symbol-name
-          # collisions to the single canonical definer and (b) structurally
-          # excludes isolated_app_dirs files, which are never registered in
-          # symbol_to_file — so an isolated file can never be promoted here.
+          # canonical-definer guard: only the file that canonically defines the
+          # symbol is eligible (resolves collisions to one file; excludes isolated
+          # dirs, which are never registered in symbol_to_file).
           next unless symbol_to_file[sym] == file_path
 
           (symbol_used_by_bundles[sym] - [owner]).each { |b| forcing << b }
@@ -215,6 +264,7 @@ module ReactManifest
         file_uses.fetch(current, Set.new).each do |sym|
           dep_file = symbol_to_file[sym]
           next unless dep_file
+          next if unpromotable.include?(dep_file)
           next if promoted.include?(dep_file)
 
           promoted << dep_file
@@ -229,13 +279,14 @@ module ReactManifest
 
     # Indexes each controller dir's files and the PascalCase symbols they define.
     # Returns [bundle_files, file_owner, file_defs, symbol_to_bundle, symbol_to_file,
-    # bundle_own_symbols].
+    # symbol_definers, bundle_own_symbols].
     def index_controller_symbols(controller_dirs)
       bundle_files = {}
       file_owner = {}
       file_defs = Hash.new { |h, k| h[k] = Set.new }
       symbol_to_bundle = {}
       symbol_to_file = {}
+      symbol_definers = Hash.new { |h, k| h[k] = Set.new }
       bundle_own_symbols = Hash.new { |h, k| h[k] = Set.new }
 
       controller_dirs.each do |ctrl|
@@ -255,13 +306,15 @@ module ReactManifest
             unless isolated
               symbol_to_bundle[sym] ||= bundle_name
               symbol_to_file[sym]   ||= file_path
+              symbol_definers[sym] << file_path
             end
             bundle_own_symbols[bundle_name] << sym
           end
         end
       end
 
-      [bundle_files, file_owner, file_defs, symbol_to_bundle, symbol_to_file, bundle_own_symbols]
+      [bundle_files, file_owner, file_defs, symbol_to_bundle, symbol_to_file,
+       symbol_definers, bundle_own_symbols]
     end
 
     # Records, per controller file and per bundle, which symbols are used —
@@ -333,6 +386,42 @@ module ReactManifest
       end
 
       [dependencies, external_requires]
+    end
+
+    # Under auto_shared, single-definer cross-used files live in ux_shared, so a
+    # controller only needs the canonical files for the symbols it uses that are NOT
+    # promoted (collided names kept bundle-local, plus their transitive needs).
+    # File-level + transitive so we never over-inline a whole dependency bundle
+    # (which could double-declare against an always_include bundle's own copy).
+    def promoted_aware_dependency_requires(bundle_name, controller_context)
+      own       = controller_context[:bundle_own_symbols].fetch(bundle_name, Set.new)
+      promoted  = controller_context[:promoted_files]
+      file_uses = controller_context[:file_uses]
+      sym2file  = controller_context[:symbol_to_file]
+      own_files = controller_context[:bundle_files].fetch(bundle_name, [])
+
+      needed = Set.new
+      seen   = Set.new
+      worklist = own_files.flat_map { |f| file_uses.fetch(f, Set.new).to_a }
+
+      until worklist.empty?
+        sym = worklist.pop
+        next if seen.include?(sym)
+
+        seen << sym
+        next if own.include?(sym)
+
+        dep_file = sym2file[sym]
+        next unless dep_file
+        next if promoted.include?(dep_file) # already served by ux_shared
+        next if own_files.include?(dep_file) # own file, added via own_requires
+        next if needed.include?(dep_file)
+
+        needed << dep_file
+        file_uses.fetch(dep_file, Set.new).each { |s| worklist << s unless seen.include?(s) }
+      end
+
+      needed.map { |f| relative_require_path(f) }.uniq.sort
     end
 
     def controller_dependency_requires(bundle_name, controller_context)

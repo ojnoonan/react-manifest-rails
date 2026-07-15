@@ -85,15 +85,48 @@ class GeneratorPromotionTest < ReactManifestTest
     assert_includes read_manifest("ux_rvb.js"), "ux/app/rvb/rvb_show"
   end
 
-  def test_symbol_collision_promotes_only_the_canonical_definer
+  def test_symbol_collision_keeps_both_definers_out_of_shared
     write_ux("app/reports/reports_widget.js.jsx", "const Widget = () => <div>reports</div>;\n")
     write_ux("app/orders/orders_widget.js.jsx", "const Widget = () => <div>orders</div>;\n")
     write_ux("app/dashboard/dashboard_index.js.jsx", "const DashboardIndex = () => <Widget />;\n")
 
     ReactManifest::Generator.new(@config).run!
 
-    shared = read_manifest("ux_shared.js")
-    assert_equal(1, ["ux/app/reports/reports_widget", "ux/app/orders/orders_widget"].count { |p| shared.include?(p) })
+    refute_includes read_manifest("ux_shared.js"), "ux/app/orders/orders_widget"
+    refute_includes read_manifest("ux_shared.js"), "ux/app/reports/reports_widget"
+    assert_includes read_manifest("ux_reports.js"), "ux/app/reports/reports_widget"
+    refute_includes read_manifest("ux_reports.js"), "ux/app/orders/orders_widget" # reports page: no double
+    # consumer gets first-writer via legacy inline
+    assert_includes read_manifest("ux_dashboard.js"), "ux/app/orders/orders_widget"
+  end
+
+  def test_promotion_does_not_over_inline_unrelated_dep_bundle_files
+    ReactManifest.configure { |c| c.always_include = ["ux_navbar"] }
+    write_ux("app/notification/show_component.js.jsx", "const Show = () => <div />;\n")
+    write_ux("app/notification/notifications_index.js.jsx", "const NotificationsIndex = () => <div />;\n")
+    write_ux("app/navbar/navbar.js.jsx", "const Navbar = () => <Show />;\n")
+
+    ReactManifest::Generator.new(@config).run!
+
+    assert_includes read_manifest("ux_shared.js"), "ux/app/notification/show_component" # Show promoted
+    # NOT over-inlined into navbar (would double against ux_notification on the notification page)
+    refute_includes read_manifest("ux_navbar.js"), "ux/app/notification/notifications_index"
+    assert_includes read_manifest("ux_notification.js"), "ux/app/notification/notifications_index"
+  end
+
+  def test_promoted_file_depending_on_collided_symbol_falls_back_to_legacy
+    write_ux("app/orders/orders_widget.js.jsx", "const Widget = () => <div>orders</div>;\n")
+    write_ux("app/reports/reports_widget.js.jsx", "const Widget = () => <div>reports</div>;\n")
+    write_ux("app/common/export_form.js.jsx", "const ExportForm = () => <Widget />;\n")
+    write_ux("app/billing/billing_index.js.jsx", "const BillingIndex = () => <ExportForm />;\n")
+
+    ReactManifest::Generator.new(@config).run!
+
+    # tainted (depends on collided Widget) -> not promoted
+    refute_includes read_manifest("ux_shared.js"), "ux/app/common/export_form"
+    assert_includes read_manifest("ux_billing.js"), "ux/app/common/export_form" # inlined per-consumer
+    # transitive first-writer Widget so ExportForm renders
+    assert_includes read_manifest("ux_billing.js"), "ux/app/orders/orders_widget"
   end
 
   def test_shared_dir_file_referencing_a_controller_symbol_promotes_it
