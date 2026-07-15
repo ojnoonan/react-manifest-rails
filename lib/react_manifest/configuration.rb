@@ -21,6 +21,10 @@ module ReactManifest
     # Keeping generated files out of output_dir root avoids clutter.
     attr_accessor :manifest_subdir
 
+    # When true (default), the gem ensures the generated manifest dir is gitignored
+    # (adds the entry on dev boot if missing). Set false to manage .gitignore yourself.
+    attr_accessor :manage_gitignore
+
     # Bundle name for auto-generated shared bundle (all non-app/ dirs)
     attr_accessor :shared_bundle
 
@@ -106,6 +110,7 @@ module ReactManifest
       @app_dir           = "app"
       @output_dir        = "app/assets/javascripts"
       @manifest_subdir   = "ux_manifests"
+      @manage_gitignore  = true
       @shared_bundle     = "ux_shared"
       @auto_shared       = true
       @always_include    = []
@@ -135,6 +140,10 @@ module ReactManifest
 
     def stdout_logging?
       !!@stdout_logging
+    end
+
+    def manage_gitignore?
+      !!@manage_gitignore
     end
 
     # Glob fragment used by Dir.glob, e.g. "*.{js,jsx}" or "*.{js,jsx,ts,tsx}"

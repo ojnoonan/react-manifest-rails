@@ -208,4 +208,14 @@ class ConfigurationTest < ReactManifestTest
     config.auto_shared = false
     assert_equal false, config.auto_shared?
   end
+
+  def test_manage_gitignore_defaults_to_true
+    assert_equal true, ReactManifest::Configuration.new.manage_gitignore?
+  end
+
+  def test_manage_gitignore_can_be_disabled
+    config = ReactManifest::Configuration.new
+    config.manage_gitignore = false
+    assert_equal false, config.manage_gitignore?
+  end
 end
