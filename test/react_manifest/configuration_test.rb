@@ -198,4 +198,24 @@ class ConfigurationTest < ReactManifestTest
     @config.exclude_paths = []
     refute_equal before, @config.cache_key
   end
+
+  def test_auto_shared_defaults_to_true
+    assert_equal true, ReactManifest::Configuration.new.auto_shared?
+  end
+
+  def test_auto_shared_can_be_disabled
+    config = ReactManifest::Configuration.new
+    config.auto_shared = false
+    assert_equal false, config.auto_shared?
+  end
+
+  def test_manage_gitignore_defaults_to_true
+    assert_equal true, ReactManifest::Configuration.new.manage_gitignore?
+  end
+
+  def test_manage_gitignore_can_be_disabled
+    config = ReactManifest::Configuration.new
+    config.manage_gitignore = false
+    assert_equal false, config.manage_gitignore?
+  end
 end

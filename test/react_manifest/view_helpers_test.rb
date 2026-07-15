@@ -379,6 +379,19 @@ class ReactManifestModuleTest < ReactManifestTest
                  ReactManifest.resolve_bundles_for_component_direct("UsersIndex")
   end
 
+  def test_resolve_bundles_for_component_direct_includes_always_include_bundles
+    # always_include bundles are delivered on every page as their own <script>
+    # tag; the react_component path (which does not go through resolve_bundles)
+    # must emit them too, so always_include symbols are available without being
+    # inlined into controller manifests.
+    File.write(File.join(@config.abs_manifest_dir, "ux_main.js"),
+               "// AUTO-GENERATED\n//= require ux_shared\n")
+    ReactManifest.configure { |c| c.always_include = ["ux_main"] }
+
+    assert_equal %w[ux_manifests/ux_shared ux_manifests/ux_main ux_manifests/ux_users],
+                 ReactManifest.resolve_bundles_for_component_direct("UsersIndex")
+  end
+
   def test_resolve_bundles_for_component_direct_does_not_include_transitive_deps
     dep_dir = Rails.root.join("app/assets/javascripts/ux/app/user_session")
     app_dir = Rails.root.join("app/assets/javascripts/ux/app/account")
@@ -533,6 +546,20 @@ class ViewHelpersTest < ReactManifestTest
     component_html = view.react_component("UsersIndex")
     refute_includes component_html, "ux_users.js"
     assert_includes component_html, "data-react-component='UsersIndex'"
+  end
+
+  def test_react_component_emits_always_include_bundle_tag
+    # Without a react_bundle_tag in the layout, react_component must still deliver
+    # always_include bundles so their symbols are on the page (the reason the
+    # 0.2.24 inline existed — now served by a tag instead).
+    File.write(File.join(@config.abs_manifest_dir, "ux_main.js"),
+               "// AUTO-GENERATED\n//= require ux_shared\n")
+    ReactManifest.configure { |c| c.always_include = ["ux_main"] }
+
+    html = host_class.new.react_component("UsersIndex")
+    assert_includes html, "ux_main.js"
+    assert_includes html, "ux_users.js"
+    assert_includes html, "data-react-component='UsersIndex'"
   end
 
   def test_react_component_still_injects_bundle_for_unrelated_component_after_bundle_tag_renders

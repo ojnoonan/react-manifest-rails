@@ -14,6 +14,7 @@ require "react_manifest/application_analyzer"
 require "react_manifest/application_migrator"
 require "react_manifest/layout_patcher"
 require "react_manifest/sprockets_manifest_patcher"
+require "react_manifest/gitignore_patcher"
 require "react_manifest/watcher"
 require "react_manifest/reporter"
 require "react_manifest/view_helpers"
@@ -55,10 +56,7 @@ module ReactManifest
       bundles << shared if shared
 
       # 2. always_include bundles (e.g. ux_main)
-      config.always_include.each do |b|
-        resolved = resolve_bundle_reference(config, b)
-        bundles << resolved if resolved && !bundles.include?(resolved)
-      end
+      append_always_include(config, bundles)
 
       # 3. Controller-specific bundle
       # Try fully-namespaced first: admin/users → ux_admin_users
@@ -72,6 +70,18 @@ module ReactManifest
       end
 
       bundles
+    end
+
+    # Ensure the manifest dir is gitignored (and .keep present). Honors
+    # config.manage_gitignore. Returns true if it appended the .gitignore entry.
+    # Best-effort: a filesystem error is logged and swallowed (never breaks boot).
+    def reconcile_gitignore!(config = configuration)
+      return false unless config.manage_gitignore?
+
+      GitignorePatcher.new(config).reconcile!
+    rescue StandardError => e
+      Rails.logger&.warn("[ReactManifest] gitignore reconcile skipped: #{e.message}")
+      false
     end
 
     # Resolve a controller bundle from a React component symbol.
@@ -101,6 +111,12 @@ module ReactManifest
       bundles = []
       shared = resolve_bundle_reference(config, config.shared_bundle)
       bundles << shared if shared
+
+      # always_include bundles are delivered on every page. react_component does
+      # NOT go through resolve_bundles, so it must emit them here too — this is
+      # what makes always_include symbols available without inlining them into
+      # controller manifests (which would double-declare, see Generator).
+      append_always_include(config, bundles)
 
       root = resolve_bundle_reference(config, root_bundle)
       bundles << root if root && !bundles.include?(root)
@@ -141,6 +157,15 @@ module ReactManifest
     end
 
     private
+
+    # Append each configured always_include bundle (deduped) to +bundles+.
+    def append_always_include(config, bundles)
+      config.always_include.each do |b|
+        resolved = resolve_bundle_reference(config, b)
+        bundles << resolved if resolved && !bundles.include?(resolved)
+      end
+      bundles
+    end
 
     def component_bundle_map(config)
       component_maps(config)[:symbol_to_bundle]

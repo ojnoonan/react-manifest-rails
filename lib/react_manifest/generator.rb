@@ -42,6 +42,14 @@ module ReactManifest
       @classifier = TreeClassifier.new(config)
     end
 
+    # After a run (or on demand), maps a promoted file's require path to the set of
+    # bundle names that forced its promotion. Used by react_manifest:analyze.
+    def promotion_reasons
+      classification = @classifier.classify
+      build_controller_context(classification.controller_dirs, classification.shared_dirs)
+      @promotion_reasons || {}
+    end
+
     # Run full generation. Returns array of {path:, status:} hashes.
     #
     # All manifest content is built first (no filesystem writes), then written
@@ -49,10 +57,10 @@ module ReactManifest
     # written and others stale/missing.
     def run!
       classification = @classifier.classify
-      controller_context = build_controller_context(classification.controller_dirs)
+      controller_context = build_controller_context(classification.controller_dirs, classification.shared_dirs)
 
       # Phase 1: build all content in memory — no I/O.
-      shared_manifest = build_shared(classification.shared_dirs)
+      shared_manifest = build_shared(classification.shared_dirs, controller_context[:promoted_files])
       manifests = [shared_manifest] + classification.controller_dirs.map do |ctrl|
         build_controller(ctrl, controller_context)
       end
@@ -98,10 +106,9 @@ module ReactManifest
 
     # ------------------------------------------------------------------ shared
 
-    def build_shared(shared_dirs)
+    def build_shared(shared_dirs, promoted_files = Set.new)
       lines = header_lines
-      reqs = shared_dirs
-             .flat_map { |d| js_files_in(d[:path]) }
+      reqs = (shared_dirs.flat_map { |d| js_files_in(d[:path]) } + promoted_files.to_a)
              .map { |f| normalize_require_path(relative_require_path(f)) }
              .uniq
              .sort
@@ -119,13 +126,21 @@ module ReactManifest
 
     def build_controller(ctrl, controller_context)
       lines = header_lines
-      always_include_reqs = controller_context[:always_include_requires].fetch(ctrl[:bundle_name], [])
-      dep_requires = controller_dependency_requires(ctrl[:bundle_name], controller_context)
-      ext_reqs = controller_context[:external_requires].fetch(ctrl[:bundle_name], Set.new).to_a.sort
+      promoted = controller_context[:promoted_files]
+      bundle_name = ctrl[:bundle_name]
+      # always_include bundles are NOT inlined here: resolve_bundles /
+      # react_component deliver them on every page via their own <script> tag,
+      # so inlining would load the same file twice and double-declare.
+      dep_requires = if @config.auto_shared?
+                       promoted_aware_dependency_requires(bundle_name, controller_context)
+                     else
+                       controller_dependency_requires(bundle_name, controller_context)
+                     end
+      ext_reqs = controller_context[:external_requires].fetch(bundle_name, Set.new).to_a.sort
 
-      files = js_files_in(ctrl[:path])
+      files = js_files_in(ctrl[:path]).reject { |f| promoted.include?(f) }
       own_requires = files.map { |f| relative_require_path(f) }
-      all_requires = (always_include_reqs + dep_requires + ext_reqs + own_requires).uniq
+      all_requires = (dep_requires + ext_reqs + own_requires).uniq
 
       if all_requires.empty?
         lines << "// (no JSX files found in #{ctrl[:name]}/)"
@@ -136,66 +151,303 @@ module ReactManifest
       { filename: "#{ctrl[:bundle_name]}.js", content: "#{lines.join("\n")}\n" }
     end
 
-    def build_controller_context(controller_dirs)
+    def build_controller_context(controller_dirs, shared_dirs)
+      bundle_files, file_owner, file_defs, symbol_to_bundle, symbol_to_file,
+      symbol_definers, bundle_own_symbols = index_controller_symbols(controller_dirs)
+
+      file_uses = Hash.new { |h, k| h[k] = Set.new }
+      symbol_used_by_bundles = Hash.new { |h, k| h[k] = Set.new }
+      record_symbol_usages(bundle_files, shared_dirs, file_uses, symbol_used_by_bundles)
+
+      collided = symbol_definers.each_with_object(Set.new) do |(sym, files), acc|
+        acc << sym if files.size >= 2
+      end
+
+      external_symbol_to_require = index_external_symbols(symbol_to_bundle)
+
+      dependencies, external_requires = build_dependency_graph(
+        bundle_files, bundle_own_symbols, file_uses, symbol_to_bundle, external_symbol_to_require
+      )
+
+      symbol_index = {
+        file_defs: file_defs,
+        symbol_to_file: symbol_to_file,
+        symbol_used_by_bundles: symbol_used_by_bundles
+      }
+      promoted_files =
+        if @config.auto_shared?
+          compute_promoted_files(file_owner, file_uses, symbol_index, collided)
+        else
+          Set.new
+        end
+
+      context = {
+        bundle_files: bundle_files,
+        dependencies: dependencies,
+        external_requires: external_requires,
+        promoted_files: promoted_files,
+        file_uses: file_uses,
+        symbol_to_file: symbol_to_file,
+        bundle_own_symbols: bundle_own_symbols
+      }
+
+      # Bundles guaranteed loaded on every page by always_include (used to exclude
+      # them from the legacy whole-bundle inline path and to self-exclude an
+      # always_include bundle's own manifest from the skip below).
+      context[:always_loaded_bundles] = compute_always_loaded_bundles(dependencies)
+      # Symbols actually delivered on every page by the always_include <script>
+      # tag(s) — derived from the real files those tags carry, NOT from whole dep
+      # bundles (which would over-claim symbols the tag does not load and cause a
+      # consumer to skip a definer it still needs). Unused by the legacy path.
+      context[:always_provided_symbols] =
+        @config.auto_shared? ? compute_always_provided_symbols(context, file_defs) : Set.new
+
+      warn_on_always_include_collisions(context, file_owner, file_defs, collided)
+
+      context
+    end
+
+    # Surface the one case dependency arithmetic cannot resolve: an always_include
+    # bundle that CONSUMES a collided symbol. Its tag inlines the first-writer
+    # definer file, which also lives in that file's own bundle manifest — so on the
+    # definer's own page the file loads twice (once via the always_include tag,
+    # once via the owning bundle), a duplicate declaration. We cannot auto-fix it
+    # (there is no collision-free page-global home for a collided symbol), so we
+    # warn with the actionable fix: rename or relocate the symbol.
+    def warn_on_always_include_collisions(context, file_owner, file_defs, collided)
+      return if collided.empty?
+
+      bundles = @config.always_include.map(&:to_s).reject(&:empty?).uniq
+      bundles.each do |always_bundle|
+        always_include_foreign_files(always_bundle, context).each do |file|
+          owner = file_owner[file]
+          next if owner.nil? || owner == always_bundle
+
+          collided_syms = (file_defs.fetch(file, Set.new) & collided).to_a.sort
+          next if collided_syms.empty?
+
+          plural = collided_syms.size > 1 ? "s" : ""
+          log_warn "always_include bundle '#{always_bundle}' pulls in " \
+                   "'#{relative_require_path(file)}' (defines collided symbol#{plural} " \
+                   "#{collided_syms.join(', ')}) owned by '#{owner}'. On #{owner}'s own page " \
+                   "that file loads twice — once via the #{always_bundle} tag and once via " \
+                   "#{owner} — causing a duplicate declaration. Rename the symbol or move it " \
+                   "to a uniquely-named shared component."
+        end
+      end
+    end
+
+    # Files an always_include bundle's tag delivers from OTHER bundles: under
+    # auto_shared, the exact non-promoted dependency files it inlines; in legacy
+    # mode, every file of the dependency bundles it inlines wholesale.
+    def always_include_foreign_files(always_bundle, context)
+      if @config.auto_shared?
+        promoted_aware_dependency_files(always_bundle, context, Set.new)
+      else
+        transitive_dependencies(always_bundle, context[:dependencies])
+          .flat_map { |dep| context[:bundle_files].fetch(dep, []) }
+      end
+    end
+
+    # Symbols the always_include tag(s) put on every page: for each always_include
+    # bundle, the symbols defined by its own non-promoted files plus the canonical
+    # dependency files it inlines (its manifest's exact file closure).
+    def compute_always_provided_symbols(context, file_defs)
+      bundles = @config.always_include.map(&:to_s).reject(&:empty?).uniq
+      return Set.new if bundles.empty?
+
+      always_files = Set.new
+      bundles.each do |b|
+        context[:bundle_files].fetch(b, []).each do |file|
+          always_files << file unless context[:promoted_files].include?(file)
+        end
+        promoted_aware_dependency_files(b, context, Set.new).each { |file| always_files << file }
+      end
+
+      always_files.each_with_object(Set.new) { |file, syms| syms.merge(file_defs.fetch(file, Set.new)) }
+    end
+
+    # Files that can never be promoted to ux_shared: any file defining a "collided"
+    # symbol (a name with 2+ app-dir definers — promoting one copy into the always-
+    # loaded shared bundle would double-declare against the other copy on its page),
+    # plus any file that transitively depends on such a file (it can't live in shared
+    # if a dependency can't). These fall back to legacy per-consumer inlining.
+    def unpromotable_files(file_owner, file_defs, file_uses, symbol_to_file, collided)
+      unpromotable = Set.new
+      file_owner.each_key do |file_path|
+        unpromotable << file_path if file_defs[file_path].any? { |s| collided.include?(s) }
+      end
+
+      loop do
+        added = false
+        file_owner.each_key do |file_path|
+          next if unpromotable.include?(file_path)
+
+          taints = file_uses.fetch(file_path, Set.new).any? do |sym|
+            dep = symbol_to_file[sym]
+            dep && unpromotable.include?(dep)
+          end
+          if taints
+            unpromotable << file_path
+            added = true
+          end
+        end
+        break unless added
+      end
+
+      unpromotable
+    end
+
+    # A controller file is promoted to the shared bundle when a symbol it canonically
+    # defines is used by a bundle other than its owner, then transitively for anything
+    # a promoted file depends on. Collided/tainted files (see unpromotable_files) are
+    # never promoted. Records why each file was promoted for react_manifest:analyze.
+    #
+    # symbol_index bundles {file_defs:, symbol_to_file:, symbol_used_by_bundles:} into
+    # one param so this stays under Metrics/ParameterLists (rubocop flags 6 positional
+    # args) without changing the underlying algorithm.
+    def compute_promoted_files(file_owner, file_uses, symbol_index, collided)
+      file_defs = symbol_index[:file_defs]
+      symbol_to_file = symbol_index[:symbol_to_file]
+      symbol_used_by_bundles = symbol_index[:symbol_used_by_bundles]
+      unpromotable = unpromotable_files(file_owner, file_defs, file_uses, symbol_to_file, collided)
+      promoted = Set.new
+      reasons = Hash.new { |h, k| h[k] = Set.new }
+
+      file_owner.each do |file_path, owner|
+        next if unpromotable.include?(file_path)
+
+        forcing = Set.new
+        file_defs[file_path].each do |sym|
+          # canonical-definer guard: only the file that canonically defines the
+          # symbol is eligible (resolves collisions to one file; excludes isolated
+          # dirs, which are never registered in symbol_to_file).
+          next unless symbol_to_file[sym] == file_path
+
+          (symbol_used_by_bundles[sym] - [owner]).each { |b| forcing << b }
+        end
+        next if forcing.empty?
+
+        promoted << file_path
+        reasons[relative_require_path(file_path)] = forcing
+      end
+
+      worklist = promoted.to_a
+      until worklist.empty?
+        current = worklist.pop
+        file_uses.fetch(current, Set.new).each do |sym|
+          dep_file = symbol_to_file[sym]
+          next unless dep_file
+          next if unpromotable.include?(dep_file)
+          next if promoted.include?(dep_file)
+
+          promoted << dep_file
+          reasons[relative_require_path(dep_file)] << "(transitive)"
+          worklist << dep_file
+        end
+      end
+
+      @promotion_reasons = reasons.transform_values(&:to_a)
+      promoted
+    end
+
+    # Indexes each controller dir's files and the PascalCase symbols they define.
+    # Returns [bundle_files, file_owner, file_defs, symbol_to_bundle, symbol_to_file,
+    # symbol_definers, bundle_own_symbols].
+    def index_controller_symbols(controller_dirs)
       bundle_files = {}
+      file_owner = {}
+      file_defs = Hash.new { |h, k| h[k] = Set.new }
       symbol_to_bundle = {}
+      symbol_to_file = {}
+      symbol_definers = Hash.new { |h, k| h[k] = Set.new }
       bundle_own_symbols = Hash.new { |h, k| h[k] = Set.new }
-      external_symbol_to_require = {}
-      dependencies = Hash.new { |h, k| h[k] = Set.new }
-      external_requires = Hash.new { |h, k| h[k] = Set.new }
 
       controller_dirs.each do |ctrl|
-        # Index controller-defined symbols for cross-app detection
         bundle_name = ctrl[:bundle_name]
         files = js_files_in(ctrl[:path])
         bundle_files[bundle_name] = files
-
         isolated = @config.isolated_app_dirs.include?(ctrl[:name])
 
         files.each do |file_path|
+          file_owner[file_path] = bundle_name
           extract_defined_symbols(file_path).each do |sym|
             next unless sym.match?(/\A[A-Z][A-Za-z0-9_]*\z/)
 
-            # Isolated dirs never register into the shared symbol index, so
-            # no other bundle can ever be inferred to depend on them —
-            # regardless of what their own symbol names happen to collide
-            # with (regex-based usage detection can't tell a real component
-            # reference from an unrelated word appearing as plain JSX text).
-            symbol_to_bundle[sym] ||= bundle_name unless isolated
+            file_defs[file_path] << sym
+            # Isolated dirs never register into the shared symbol index, so no
+            # other bundle can ever be inferred to depend on them.
+            unless isolated
+              symbol_to_bundle[sym] ||= bundle_name
+              symbol_to_file[sym]   ||= file_path
+              symbol_definers[sym] << file_path
+            end
             bundle_own_symbols[bundle_name] << sym
           end
         end
       end
 
-      # Index symbols from external_roots dirs
+      [bundle_files, file_owner, file_defs, symbol_to_bundle, symbol_to_file,
+       symbol_definers, bundle_own_symbols]
+    end
+
+    # Records, per controller file and per bundle, which symbols are used —
+    # plus a pseudo-bundle entry (config.shared_bundle) for any controller
+    # symbol referenced from a shared-dir file (shared code loads on every
+    # page, so that symbol's owning file must be treated as externally used).
+    def record_symbol_usages(bundle_files, shared_dirs, file_uses, symbol_used_by_bundles)
+      bundle_files.each do |bundle_name, files|
+        files.each do |file_path|
+          extract_used_component_symbols(file_path).each do |sym|
+            file_uses[file_path] << sym
+            symbol_used_by_bundles[sym] << bundle_name
+          end
+        end
+      end
+
+      shared_dirs.each do |dir|
+        js_files_in(dir[:path]).each do |file_path|
+          extract_used_component_symbols(file_path).each do |sym|
+            symbol_used_by_bundles[sym] << @config.shared_bundle
+          end
+        end
+      end
+    end
+
+    # Indexes symbols from external_roots dirs, then lets explicit
+    # external_providers win over scanned roots on symbol conflicts.
+    def index_external_symbols(symbol_to_bundle)
+      external_symbol_to_require = {}
+
       @config.external_roots.each do |root_path|
         abs_root = abs_external_root(root_path)
         external_js_files_in(abs_root).each do |file_path|
           req_path = relative_require_path(file_path)
-
           warn_on_external_controller_references(file_path, symbol_to_bundle)
-
           extract_defined_symbols(file_path).each do |sym|
             external_symbol_to_require[sym] ||= req_path
           end
         end
       end
 
-      # Explicit external_providers win over scanned roots on symbol conflicts
       @config.external_providers.each do |sym, req_path|
         external_symbol_to_require[sym] = req_path
       end
 
-      # Compute per-bundle cross-app and external dependencies
+      external_symbol_to_require
+    end
+
+    # Cross-app dependency graph + external requires (dependencies kept for
+    # reporting). Returns [dependencies, external_requires].
+    def build_dependency_graph(bundle_files, bundle_own_symbols, file_uses, symbol_to_bundle,
+                               external_symbol_to_require)
+      dependencies = Hash.new { |h, k| h[k] = Set.new }
+      external_requires = Hash.new { |h, k| h[k] = Set.new }
+
       bundle_files.each do |bundle_name, files|
         own_symbols = bundle_own_symbols[bundle_name]
-
         files.each do |file_path|
-          extract_used_component_symbols(file_path).each do |sym|
-            # A symbol the bundle defines itself (in any of its own files) is
-            # always satisfied locally — never attribute it to another bundle
-            # or an external provider just because that symbol name happens
-            # to collide with something defined elsewhere.
+          file_uses[file_path].each do |sym|
             next if own_symbols.include?(sym)
 
             dep_bundle = symbol_to_bundle[sym]
@@ -207,22 +459,80 @@ module ReactManifest
         end
       end
 
-      always_include_requires = build_always_include_requires(bundle_files, dependencies)
+      [dependencies, external_requires]
+    end
 
-      {
-        bundle_files: bundle_files,
-        dependencies: dependencies,
-        always_include_requires: always_include_requires,
-        external_requires: external_requires
-      }
+    # Under auto_shared, single-definer cross-used files live in ux_shared, so a
+    # controller only needs the canonical files for the symbols it uses that are NOT
+    # promoted (collided names kept bundle-local, plus their transitive needs).
+    # File-level + transitive so we never over-inline a whole dependency bundle
+    # (which could double-declare against an always_include bundle's own copy).
+    def promoted_aware_dependency_requires(bundle_name, controller_context)
+      # Symbols already on every page via an always_include tag. Skipped so a
+      # controller never inlines a (possibly colliding) second definer. Disabled
+      # when building an always_include bundle's own manifest (it needs its deps).
+      always_provided = always_provided_for(bundle_name, controller_context)
+      promoted_aware_dependency_files(bundle_name, controller_context, always_provided)
+        .map { |f| relative_require_path(f) }
+        .uniq
+        .sort
+    end
+
+    # Absolute paths of the non-promoted files a bundle must inline: for each
+    # symbol it uses (transitively) that is neither its own, promoted to shared,
+    # nor +always_provided+ on the page, the canonical (first-writer) definer file.
+    def promoted_aware_dependency_files(bundle_name, controller_context, always_provided)
+      own       = controller_context[:bundle_own_symbols].fetch(bundle_name, Set.new)
+      promoted  = controller_context[:promoted_files]
+      file_uses = controller_context[:file_uses]
+      sym2file  = controller_context[:symbol_to_file]
+      own_files = controller_context[:bundle_files].fetch(bundle_name, [])
+
+      needed = Set.new
+      seen   = Set.new
+      worklist = own_files.flat_map { |f| file_uses.fetch(f, Set.new).to_a }
+
+      until worklist.empty?
+        sym = worklist.pop
+        next if seen.include?(sym)
+
+        seen << sym
+        next if own.include?(sym)
+        next if always_provided.include?(sym)
+
+        dep_file = sym2file[sym]
+        next unless dep_file
+        next if promoted.include?(dep_file) # already served by ux_shared
+        next if own_files.include?(dep_file) # own file, added via own_requires
+        next if needed.include?(dep_file)
+
+        needed << dep_file
+        file_uses.fetch(dep_file, Set.new).each { |s| worklist << s unless seen.include?(s) }
+      end
+
+      needed
     end
 
     def controller_dependency_requires(bundle_name, controller_context)
       deps = transitive_dependencies(bundle_name, controller_context[:dependencies])
+      # Drop always_include bundles (and their transitive deps): they load on
+      # every page via their own <script> tag, so inlining them here would
+      # double-declare. Kept when the current bundle IS an always_include bundle.
+      always = controller_context[:always_loaded_bundles]
+      deps -= always.to_a unless always.include?(bundle_name)
       deps.flat_map { |dep_bundle| controller_context[:bundle_files].fetch(dep_bundle, []) }
           .map { |abs_path| relative_require_path(abs_path) }
           .uniq
           .sort
+    end
+
+    # Symbols delivered on every page by an always_include tag, for +bundle_name+.
+    # Empty when building an always_include bundle's own manifest so it still
+    # inlines the dependencies it needs.
+    def always_provided_for(bundle_name, controller_context)
+      return Set.new if controller_context[:always_loaded_bundles].include?(bundle_name)
+
+      controller_context[:always_provided_symbols]
     end
 
     def transitive_dependencies(bundle_name, dependency_map)
@@ -245,30 +555,16 @@ module ReactManifest
       ordered
     end
 
-    def build_always_include_requires(bundle_files, dependencies)
+    # The set of bundles guaranteed loaded on every page by always_include: each
+    # configured always_include bundle plus its transitive dependencies. These
+    # arrive via their own <script> tag (resolve_bundles / react_component), so
+    # controller manifests must never inline their files or symbols.
+    def compute_always_loaded_bundles(dependencies)
       bundles = @config.always_include.map(&:to_s).reject(&:empty?).uniq
-      return Hash.new { |h, k| h[k] = [] } if bundles.empty?
-
-      requires_by_bundle = Hash.new { |h, k| h[k] = [] }
-
-      bundle_files.each_key do |bundle_name|
-        requires = Set.new
-
-        bundles.each do |always_bundle|
-          next if always_bundle == bundle_name
-
-          transitive = [always_bundle] + transitive_dependencies(always_bundle, dependencies)
-          transitive.each do |dep_bundle|
-            bundle_files.fetch(dep_bundle, []).each do |abs_path|
-              requires << relative_require_path(abs_path)
-            end
-          end
-        end
-
-        requires_by_bundle[bundle_name] = requires.to_a.sort
+      bundles.each_with_object(Set.new) do |always_bundle, acc|
+        acc << always_bundle
+        transitive_dependencies(always_bundle, dependencies).each { |dep| acc << dep }
       end
-
-      requires_by_bundle
     end
 
     # --------------------------------------------------------------- write

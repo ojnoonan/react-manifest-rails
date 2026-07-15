@@ -65,7 +65,7 @@ class GeneratorRunTest < ReactManifestTest
     assert content.index("notifications_index") < content.index("notifications_show")
   end
 
-  def test_includes_dependent_controller_files_when_main_uses_component_from_another_app_dir
+  def test_promotes_cross_app_component_into_shared_under_default
     dep_dir = Rails.root.join("app/assets/javascripts/ux/app/design_variables")
     main_dir = Rails.root.join("app/assets/javascripts/ux/app/main")
     FileUtils.mkdir_p(dep_dir)
@@ -80,10 +80,11 @@ class GeneratorRunTest < ReactManifestTest
     File.write(main_dir.join("main_index.js.jsx"), main_index_content)
 
     @generator.run!
-    content = read_manifest("ux_main.js")
 
-    assert_includes content, "ux/app/design_variables/design_variable_show"
-    assert_includes content, "ux/app/main/main_index"
+    # Cross-app component is promoted to shared, not inlined into the consumer.
+    assert_includes read_manifest("ux_shared.js"), "ux/app/design_variables/design_variable_show"
+    refute_includes read_manifest("ux_main.js"), "ux/app/design_variables/design_variable_show"
+    assert_includes read_manifest("ux_main.js"), "ux/app/main/main_index"
   end
 
   def test_does_not_include_unrelated_bundle_when_component_name_collides_with_own_bundle_file
@@ -148,7 +149,11 @@ class GeneratorRunTest < ReactManifestTest
     assert_includes read_manifest("ux_rvb.js"), "ux/app/rvb/babel.min"
   end
 
-  def test_inlines_always_include_bundle_files_into_controller_manifests
+  def test_always_include_bundle_files_are_not_inlined_into_other_controllers
+    # always_include bundles load on every page via their own <script> tag
+    # (resolve_bundles / react_component). Inlining their files into every
+    # controller manifest would load the same file twice on a page and
+    # double-declare, so ux_users must NOT contain ux_main's files.
     ReactManifest.configure { |c| c.always_include = ["ux_main"] }
 
     main_dir = Rails.root.join("app/assets/javascripts/ux/app/main")
@@ -160,10 +165,13 @@ class GeneratorRunTest < ReactManifestTest
     File.write(users_dir.join("users_index.js.jsx"), "const UsersIndex = () => <div />;\n")
 
     @generator.run!
-    content = read_manifest("ux_users.js")
 
-    assert_includes content, "ux/app/main/main_index"
-    assert_includes content, "ux/app/users/users_index"
+    users = read_manifest("ux_users.js")
+    refute_includes users, "ux/app/main/main_index"
+    assert_includes users, "ux/app/users/users_index"
+
+    # The always_include bundle's own manifest still carries its files.
+    assert_includes read_manifest("ux_main.js"), "ux/app/main/main_index"
   end
 
   def test_idempotency_does_not_change_file_if_content_unchanged
@@ -448,6 +456,13 @@ class GeneratorRunTest < ReactManifestTest
     assert(warn_calls.any? { |m| m.include?("broken.js.jsx") && m.include?("line") },
            "expected a line-numbered warning naming the broken file, got: #{warn_calls.inspect}")
     assert File.exist?(File.join(output_dir, "ux_broken.js")), "generation should still complete for other files"
+  end
+
+  def test_controller_context_exposes_empty_promoted_files_when_refactor_lands
+    context = @generator.send(:build_controller_context,
+                              @generator.instance_variable_get(:@classifier).classify.controller_dirs,
+                              @generator.instance_variable_get(:@classifier).classify.shared_dirs)
+    assert_kind_of Set, context[:promoted_files]
   end
 end
 

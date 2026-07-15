@@ -54,6 +54,9 @@ Both Scanner and Generator delegate all JS symbol work to `SymbolExtractor`.
 2. **`Scanner`** (`scanner.rb`) — Phase 1: regex-indexes exported symbols from shared dirs into a `symbol_index` (`"PrimaryButton" → "ux/components/…"`). Phase 2: scans controller files for usages (JSX tags, hook calls, lib calls) and maps them to the shared files they reference. Delegates all symbol extraction to `SymbolExtractor`; calls `config.excluded_path?` for path filtering.
 
 3. **`Generator`** (`generator.rb`) — builds all manifest content in memory first (`build_shared`, `build_controller`), then writes atomically (temp file + rename) so no partial state is left on failure. Skips files without the `AUTO-GENERATED` header (user-pinned). Idempotent via SHA-256 digest comparison. Delegates symbol extraction to `SymbolExtractor`; calls `config.excluded_path?` for path filtering.
+   With `config.auto_shared` (default on), a controller-owned file used by any other
+   bundle is promoted into `ux_shared` (transitively) so each file is emitted into
+   exactly one bundle; `auto_shared = false` restores legacy cross-app inlining.
 
 4. **`Configuration`** (`configuration.rb`) — single config object. Key options: `ux_root`, `app_dir`, `output_dir`, `extensions` (`%w[js jsx]` by default; add `ts tsx` for TypeScript), `shared_bundle`, `always_include`, `exclude_paths`, `dry_run`, `verbose`. Provides `excluded_path?(abs_path)` (shared predicate used by Scanner and Generator) and `cache_key` (hash over the six fields that affect component maps, used to auto-invalidate `@component_maps_cache` on mutation).
 
@@ -72,6 +75,9 @@ Both Scanner and Generator delegate all JS symbol work to `SymbolExtractor`.
 - Starts `Watcher` in development if not already running.
 - Includes `ViewHelpers` into `ActionView::Base`.
 - Prepends `react_manifest:generate` as a prerequisite to `assets:precompile`.
+- In development, also reconciles `.gitignore` (adds the manifest-dir ignore entry if
+  missing) via `ReactManifest.reconcile_gitignore!` / `GitignorePatcher`. Dev-only;
+  production never writes to the app tree at boot.
 
 ### Testing
 
