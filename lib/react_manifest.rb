@@ -75,6 +75,18 @@ module ReactManifest
       bundles
     end
 
+    # Ensure the manifest dir is gitignored (and .keep present). Honors
+    # config.manage_gitignore. Returns true if it appended the .gitignore entry.
+    # Best-effort: a filesystem error is logged and swallowed (never breaks boot).
+    def reconcile_gitignore!(config = configuration)
+      return false unless config.manage_gitignore?
+
+      GitignorePatcher.new(config).reconcile!
+    rescue StandardError => e
+      Rails.logger&.warn("[ReactManifest] gitignore reconcile skipped: #{e.message}")
+      false
+    end
+
     # Resolve a controller bundle from a React component symbol.
     #
     # This is primarily used to support react-rails `react_component` calls,

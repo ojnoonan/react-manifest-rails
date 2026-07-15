@@ -17,6 +17,19 @@ module ReactManifest
       Result.new(appended: ensure_gitignore_entry, keep_created: ensure_keep)
     end
 
+    # patch! plus a one-time hint to untrack previously-committed manifests when the
+    # .gitignore entry was just added (the gem never runs git itself). Returns true
+    # iff the .gitignore entry was appended.
+    def reconcile!
+      result = patch!
+      if result.appended
+        base = File.dirname(pattern)
+        log_info "If #{base}/*.js were previously committed, untrack them once: " \
+                 "git rm --cached #{base}/*.js"
+      end
+      result.appended
+    end
+
     # Path (relative to Rails.root) that should be ignored, e.g.
     # "app/assets/javascripts/ux_manifests/*.js".
     def pattern
