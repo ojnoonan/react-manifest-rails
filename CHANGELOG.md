@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-10-13
+
 ### Added
 - `react_component` adds `data-react-persist="true"` to the root element when it runs after
   `react_bundle_tag` in the same request. That is a component in the layout body (navbar,
