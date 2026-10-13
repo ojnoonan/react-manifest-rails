@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `react_component` adds `data-react-persist="true"` to the root element when it runs after
+  `react_bundle_tag` in the same request. That is a component in the layout body (navbar,
+  footer, sidebar), since Rails renders the template first. A Turbolinks wrapper can keep it
+  mounted across visits and pass it new props. Template components are never marked.
+
 ## [0.3.1] - 2026-10-13
 
 ### Added

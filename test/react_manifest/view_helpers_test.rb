@@ -5,8 +5,10 @@ require "action_view"
 module ViewHelperClassBuilder
   def base_class
     @base_class ||= Class.new do
-      def react_component(name, *_args, **_kwargs)
-        "<div data-react-component='#{name}'></div>"
+      # Same arity as react-rails: trailing keywords arrive as the options hash.
+      def react_component(name, _props = {}, options = {})
+        marks = (options[:data] || {}).map { |k, v| " data-#{k.to_s.tr('_', '-')}=\"#{v}\"" }.join
+        "<div data-react-component='#{name}'#{marks}></div>"
       end
 
       def javascript_include_tag(*names, **opts)
@@ -715,5 +717,73 @@ class ViewHelpersTrackingTest < ReactManifestTest
 
   def test_tracked_shared_tag_is_identical_across_pages
     assert_equal tag_for(page_head(%w[UsersIndex]), "ux_shared"), tag_for(page_head([]), "ux_shared")
+  end
+end
+
+# A component rendered after react_bundle_tag is in the layout body (page chrome).
+class ViewHelpersPersistTest < ReactManifestTest
+  include ViewHelperClassBuilder
+
+  def setup
+    super
+    ReactManifest::Generator.new(ReactManifest.configuration).run!
+  end
+
+  def test_component_rendered_before_react_bundle_tag_is_not_marked_persistent
+    view = host_with_request_class.new("users")
+    html = view.react_component("UsersIndex")
+    view.react_bundle_tag
+
+    refute_includes html, "data-react-persist"
+  end
+
+  def test_component_rendered_after_react_bundle_tag_is_marked_persistent
+    view = host_with_request_class.new("users")
+    view.react_bundle_tag
+
+    assert_includes view.react_component("UsersIndex"), 'data-react-persist="true"'
+  end
+
+  def test_persist_marker_keeps_caller_data_with_positional_options
+    view = host_with_request_class.new("users")
+    view.react_bundle_tag
+
+    html = view.react_component("UsersIndex", { a: 1 }, { data: { foo: "bar" } })
+    assert_includes html, 'data-react-persist="true"'
+    assert_includes html, 'data-foo="bar"'
+  end
+
+  def test_persist_marker_keeps_caller_data_with_keyword_options
+    view = host_with_request_class.new("users")
+    view.react_bundle_tag
+
+    html = view.react_component("UsersIndex", { a: 1 }, data: { foo: "bar" })
+    assert_includes html, 'data-react-persist="true"'
+    assert_includes html, 'data-foo="bar"'
+  end
+
+  def test_persist_marker_with_keywords_only_treats_them_as_props
+    view = host_with_request_class.new("users")
+    view.react_bundle_tag
+
+    html = view.react_component("UsersIndex", a: 1)
+    assert_includes html, 'data-react-persist="true"'
+  end
+
+  def test_persist_marker_does_not_mutate_caller_options
+    view = host_with_request_class.new("users")
+    view.react_bundle_tag
+    options = { data: { foo: "bar" } }
+
+    view.react_component("UsersIndex", {}, options)
+    assert_equal({ data: { foo: "bar" } }, options)
+  end
+
+  def test_persist_marker_leaves_bundle_tag_emission_unchanged
+    view = host_with_request_class.new("users")
+    view.react_bundle_tag
+    html = view.react_component("UsersIndex")
+
+    refute_includes html, "<script"
   end
 end

@@ -18,6 +18,8 @@ module ReactManifest
     INLINE_BUNDLE_TAG = %r{<script\b[^>]*\sdata-react-manifest="([^"]*)"[^>]*></script>}
 
     def react_bundle_tag(**html_options)
+      request_store["react_manifest.bundle_tag_rendered"] = true
+
       # controller_path is not available in all view contexts (mailers, engines,
       # views rendered outside a request). Fall back gracefully rather than raising.
       ctrl = respond_to?(:controller_path, true) ? controller_path : nil
@@ -46,8 +48,11 @@ module ReactManifest
     # If a component-specific controller bundle can be inferred from the component
     # symbol, include that bundle at the call site before delegating to react-rails.
     # This avoids strict dependence on controller_path -> bundle naming alignment.
+    #
+    # A call after react_bundle_tag is in the layout body (page chrome), so its root gets
+    # data-react-persist: a Turbolinks wrapper keeps it mounted and hands it new props.
     def react_component(*args, **kwargs, &block)
-      html = super
+      html = bundle_tag_rendered? ? super(*persistent_args(args, kwargs), &block) : super
 
       component_name = args.first
       bundles = ReactManifest.resolve_bundles_for_component_direct(component_name)
@@ -68,6 +73,18 @@ module ReactManifest
     end
 
     private
+
+    def bundle_tag_rendered?
+      request_store["react_manifest.bundle_tag_rendered"]
+    end
+
+    # react-rails takes (name, props = {}, options = {}); trailing keywords fill the next slot.
+    def persistent_args(args, kwargs)
+      name, props, options = kwargs.empty? ? args : [*args, kwargs]
+      options = { tag: options } if options.is_a?(Symbol)
+      options ||= {}
+      [name, props || {}, options.merge(data: { react_persist: true }.merge(options[:data] || {}))]
+    end
 
     # Turbolinks 5 full-reloads when the tracked head elements differ between pages.
     # ux_shared is identical on every page, so tracking it forces one reload per deploy;
@@ -105,12 +122,16 @@ module ReactManifest
     end
 
     def emitted_bundles
-      # ActionView can instantiate multiple helper contexts during one request.
-      # Store emitted bundles in request env so layout + template helpers dedupe.
+      request_store["react_manifest.emitted_bundles"] ||= []
+    end
+
+    # ActionView can instantiate multiple helper contexts during one request.
+    # Request env is shared by layout + template helpers; fall back to the view itself.
+    def request_store
       if respond_to?(:request, true) && request
-        request.env["react_manifest.emitted_bundles"] ||= []
+        request.env
       else
-        @emitted_bundles ||= []
+        @request_store ||= {}
       end
     end
   end
