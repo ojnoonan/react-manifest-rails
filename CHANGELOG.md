@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-10-13
+
+### Added
+- `react_bundle_tag` emits `data-turbolinks-track="reload"` on the shared bundle's tag only
+  (`config.shared_bundle`). Turbolinks 5 then full-reloads once after a deploy changes
+  `ux_shared`, so old shared code never runs with new controller code. Controller and
+  `always_include` bundles stay untracked to avoid a reload on every cross-controller visit.
+- `react_manifest:generate` warns when two different files declare the same top-level
+  `const`/`let`/`class` (destructured names included) in different bundles. Classic scripts
+  share one global scope, so under Turbolinks the second bundle throws "Identifier X has
+  already been declared" and is rejected.
+- `react_manifest:generate` (and the dev boot/watch generation) writes
+  `ux_manifests/component_index.json`, the component-symbol -> bundle maps. `react_component`
+  loads it instead of parsing `ux/app` with mini_racer on each process's first call (no V8
+  context, no per-worker RSS cost). It is used only when its content fingerprint matches;
+  a missing or stale sidecar falls back to the runtime parse. Gitignored alongside the
+  manifests; removed by `react_manifest:clean`.
+- `rake react_manifest:check`: analysis only, writes nothing, exits 1 with the warnings on
+  stderr when any "declared twice" clash is found (cross-bundle lexical collisions,
+  `always_include` double-declares). Meant for CI.
+
+### Fixed
+- `mini_racer` is now a declared runtime dependency (`>= 0.2`); `AstExtractor` already
+  required it unconditionally.
+- The built gem no longer ships `lib/react_manifest/vendor/build/node_modules`.
+- `react_bundle_tag` now hoists bundle `<script>` tags into the layout `<head>`. Rails renders
+  the template before the layout, so `react_component` wrote ux_shared, `always_include` and
+  controller bundle tags into the `<body>`; Turbolinks re-evaluates body scripts on every
+  visit, giving "Identifier X has already been declared". `react_component` now marks its
+  inline tags (`data-react-manifest`) and `react_bundle_tag` moves them to the head, once, in
+  shared → always_include → controller order. Layouts without `react_bundle_tag` are unchanged.
+- Collision warnings for `always_include` bundles now cover the every-page double.
+  Previously only a file that **directly** defined a collided symbol was warned about.
+  A file that is merely *tainted* (transitively depends on a collided symbol) and gets
+  pulled into **2+** `always_include` tags double-declares on every page but was not
+  warned. The warning now reports both a *multi-tag* double (a file carried by 2+
+  always_include tags — including tainted files, naming the file, symbol, and bundles)
+  and the *owner-page* double (single tag vs. the owning bundle), with wording accurate
+  to each case rather than always claiming the double happens "on the owner's page".
+
 ## [0.3.0] - 2026-07-15
 
 ### Fixed

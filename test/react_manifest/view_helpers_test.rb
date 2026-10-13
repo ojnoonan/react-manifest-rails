@@ -1,4 +1,5 @@
 require "test_helper"
+require "action_view"
 
 # Shared helper to build the fake view base class used across ViewHelpers tests.
 module ViewHelperClassBuilder
@@ -8,12 +9,13 @@ module ViewHelperClassBuilder
         "<div data-react-component='#{name}'></div>"
       end
 
-      def javascript_include_tag(*names, **_opts)
-        names.map { |name| "<script src='#{name}.js'></script>" }.join
+      def javascript_include_tag(*names, **opts)
+        marks = (opts[:data] || {}).map { |k, v| " data-#{k.to_s.tr('_', '-')}=\"#{v}\"" }.join
+        names.map { |name| "<script src='#{name}.js'#{marks}></script>" }.join
       end
 
-      def safe_join(parts)
-        parts.join
+      def safe_join(parts, sep = "")
+        parts.join(sep)
       end
     end
   end
@@ -42,6 +44,21 @@ module ViewHelperClassBuilder
   # Unlike host_with_bundle_tag_class, this simulates a real Rails view context
   # where `request` is available — matching production, where react_bundle_tag
   # and react_component share the same request.env across the layout + template.
+  def host_with_view_flow_class
+    @host_with_view_flow_class ||= Class.new(host_with_request_class) do
+      attr_reader :view_flow
+
+      def initialize(ctrl)
+        super
+        @view_flow = ActionView::OutputFlow.new
+      end
+
+      def respond_to?(sym, include_private = false) # rubocop:disable Style/OptionalBooleanParameter
+        sym == :view_flow || super
+      end
+    end
+  end
+
   def host_with_request_class
     @host_with_request_class ||= Class.new(base_class) do
       include ReactManifest::ViewHelpers
@@ -581,5 +598,122 @@ class ViewHelpersTest < ReactManifestTest
 
     component_html = view.react_component("Network")
     assert_includes component_html, "ux_network.js"
+  end
+  # --- hoisting inline bundle tags into react_bundle_tag (the head) ---
+
+  def render_template_then_layout(view, ctrl_components)
+    body = ctrl_components.map { |c| view.react_component(c) }.join
+    view.view_flow.set(:layout, body)
+    head = view.react_bundle_tag
+    [head, view.view_flow.get(:layout)]
+  end
+
+  def scripts(html)
+    html.scan(/src='([^']+)'/).flatten.map { |src| File.basename(src, ".js.js") }
+  end
+
+  def test_react_bundle_tag_hoists_inline_bundle_tags_out_of_the_template
+    File.write(File.join(@config.abs_manifest_dir, "ux_main.js"),
+               "// AUTO-GENERATED\n//= require ux_shared\n")
+    ReactManifest.configure { |c| c.always_include = ["ux_main"] }
+    view = host_with_view_flow_class.new("users")
+
+    head, body = render_template_then_layout(view, %w[UsersIndex UsersIndex])
+
+    assert_equal %w[ux_shared ux_main ux_users], scripts(head)
+    refute_includes body, "<script"
+    assert_includes body, "data-react-component='UsersIndex'"
+    assert_predicate body, :html_safe?
+  end
+
+  def test_hoisted_head_tags_carry_no_marker_and_match_across_pages
+    view = host_with_view_flow_class.new("users")
+    head, = render_template_then_layout(view, %w[UsersIndex])
+    refute_includes head, "data-react-manifest"
+
+    other = host_with_view_flow_class.new("users")
+    other_head, = render_template_then_layout(other, [])
+    assert_equal head, other_head
+  end
+
+  def test_react_bundle_tag_hoists_from_content_for_buffers_too
+    view = host_with_view_flow_class.new("users")
+    view.view_flow.set(:sidebar, view.react_component("UsersIndex"))
+
+    head = view.react_bundle_tag
+
+    assert_includes scripts(head), "ux_users"
+    refute_includes view.view_flow.get(:sidebar), "<script"
+  end
+
+  def test_hoisted_order_is_controller_bundle_before_other_component_bundles
+    network_dir = Rails.root.join("app/assets/javascripts/ux/app/network")
+    FileUtils.mkdir_p(network_dir)
+    File.write(network_dir.join("network_widget.js.jsx"), "const Network = () => <div />;\n")
+    ReactManifest::Generator.new(@config).run!
+    view = host_with_view_flow_class.new("users")
+
+    head, body = render_template_then_layout(view, %w[Network UsersIndex])
+
+    assert_equal %w[ux_shared ux_users ux_network], scripts(head)
+    refute_includes body, "<script"
+  end
+
+  def test_without_react_bundle_tag_inline_tags_stay_in_the_template
+    view = host_with_view_flow_class.new("users")
+    body = view.react_component("UsersIndex")
+    view.view_flow.set(:layout, body)
+
+    assert_includes view.view_flow.get(:layout), "ux_users.js"
+  end
+end
+
+# Turbolinks 5 only tracks data-turbolinks-track="reload"; only the shared bundle gets it.
+class ViewHelpersTrackingTest < ReactManifestTest
+  include ViewHelperClassBuilder
+
+  TRACK = 'data-turbolinks-track="reload"'.freeze
+
+  def setup
+    super
+    ReactManifest::Generator.new(ReactManifest.configuration).run!
+  end
+
+  def tag_for(html, bundle)
+    html.scan(%r{<script[^>]*src='[^']*#{bundle}\.js\.js'[^>]*></script>}).first.to_s
+  end
+
+  def page_head(components)
+    view = host_with_view_flow_class.new("users")
+    view.view_flow.set(:layout, components.map { |c| view.react_component(c) }.join)
+    view.react_bundle_tag
+  end
+
+  def test_react_bundle_tag_tracks_only_the_shared_bundle
+    File.write(File.join(ReactManifest.configuration.abs_manifest_dir, "ux_main.js"),
+               "// AUTO-GENERATED\n//= require ux_shared\n")
+    ReactManifest.configure { |c| c.always_include = ["ux_main"] }
+
+    head = host_with_bundle_tag_class.new("users").react_bundle_tag
+
+    assert_includes tag_for(head, "ux_shared"), TRACK
+    assert_includes head, "ux_main.js"
+    refute_includes tag_for(head, "ux_main"), "turbolinks"
+    refute_includes tag_for(head, "ux_users"), "turbolinks"
+  end
+
+  def test_component_inline_tags_are_not_tracked
+    refute_includes host_class.new.react_component("UsersIndex"), "turbolinks"
+  end
+
+  def test_hoisted_shared_bundle_is_tracked_in_head
+    head = page_head(%w[UsersIndex])
+
+    assert_includes tag_for(head, "ux_shared"), TRACK
+    refute_includes tag_for(head, "ux_users"), "turbolinks"
+  end
+
+  def test_tracked_shared_tag_is_identical_across_pages
+    assert_equal tag_for(page_head(%w[UsersIndex]), "ux_shared"), tag_for(page_head([]), "ux_shared")
   end
 end

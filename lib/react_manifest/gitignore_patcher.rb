@@ -30,6 +30,11 @@ module ReactManifest
       result.appended
     end
 
+    # The component-index sidecar written next to the manifests (see ComponentIndex).
+    def json_pattern
+      File.join(File.dirname(pattern), "*.json")
+    end
+
     # Path (relative to Rails.root) that should be ignored, e.g.
     # "app/assets/javascripts/ux_manifests/*.js".
     def pattern
@@ -46,13 +51,14 @@ module ReactManifest
 
     def ensure_gitignore_entry
       path    = gitignore_path
-      line    = pattern
       content = File.exist?(path) ? File.read(path, encoding: "utf-8") : ""
-      return false if content.split("\n").map(&:strip).include?(line)
+      lines   = content.split("\n").map(&:strip)
+      missing = [pattern, json_pattern] - lines
+      return false if missing.empty?
 
       prefix = content.empty? || content.end_with?("\n") ? "" : "\n"
-      File.open(path, "a") { |f| f.write("#{prefix}#{line}\n") }
-      log_info "Added #{line} to .gitignore"
+      File.open(path, "a") { |f| f.write("#{prefix}#{missing.join("\n")}\n") }
+      log_info "Added #{missing.join(', ')} to .gitignore"
       true
     rescue Errno::EACCES, Errno::ENOENT => e
       log_warn "Could not update .gitignore: #{e.message}"

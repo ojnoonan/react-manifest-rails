@@ -56,14 +56,7 @@ module ReactManifest
     # in a second pass so that a failure midway does not leave some bundles
     # written and others stale/missing.
     def run!
-      classification = @classifier.classify
-      controller_context = build_controller_context(classification.controller_dirs, classification.shared_dirs)
-
-      # Phase 1: build all content in memory — no I/O.
-      shared_manifest = build_shared(classification.shared_dirs, controller_context[:promoted_files])
-      manifests = [shared_manifest] + classification.controller_dirs.map do |ctrl|
-        build_controller(ctrl, controller_context)
-      end
+      classification, manifests = build_manifests
 
       migrate_legacy_manifests!
 
@@ -76,8 +69,18 @@ module ReactManifest
       expected_filenames = manifests.map { |m| m[:filename] }
       results.concat(remove_orphaned_manifests(expected_filenames))
 
+      ComponentIndex.write!(@config, classification.controller_dirs) unless @config.dry_run?
+
       print_summary(results) if @config.verbose?
       results
+    end
+
+    # Analyse without writing anything. Returns the "declared twice" warnings
+    # (cross-bundle top-level const/let/class collisions and always_include
+    # double-declares); empty when clean. Backs `rake react_manifest:check`.
+    def check
+      build_manifests
+      @clashes
     end
 
     # Remove all AUTO-GENERATED ux_*.js manifests. Silently skips files that
@@ -98,6 +101,8 @@ module ReactManifest
           end
         end
       end
+
+      FileUtils.rm_f(ComponentIndex.path(@config))
 
       { removed: removed, skipped: skipped }
     end
@@ -207,34 +212,121 @@ module ReactManifest
       context
     end
 
-    # Surface the one case dependency arithmetic cannot resolve: an always_include
-    # bundle that CONSUMES a collided symbol. Its tag inlines the first-writer
-    # definer file, which also lives in that file's own bundle manifest — so on the
-    # definer's own page the file loads twice (once via the always_include tag,
-    # once via the owning bundle), a duplicate declaration. We cannot auto-fix it
-    # (there is no collision-free page-global home for a collided symbol), so we
-    # warn with the actionable fix: rename or relocate the symbol.
+    # Surface the collision cases dependency arithmetic cannot resolve. A collided
+    # symbol (2+ app-dir definers) has no collision-free page-global home, so a file
+    # that defines or transitively depends on one can never be promoted to ux_shared;
+    # it is inlined into whichever always_include tag(s) reach it and double-declares:
+    #
+    #   * multi-tag (every page): the same file is carried by 2+ always_include tags.
+    #     Both tags load on every page, so it double-declares everywhere — whether it
+    #     DEFINES the collided symbol or merely depends on one (a tainted file).
+    #   * owner-page: the file is carried by a single always_include tag but also lives
+    #     in its own controller's manifest, so it double-declares on that owner's page.
+    #
+    # We cannot auto-fix either (there is no safe shared home for a collided symbol),
+    # so we warn with the actionable fix: rename or relocate the symbol.
     def warn_on_always_include_collisions(context, file_owner, file_defs, collided)
       return if collided.empty?
 
       bundles = @config.always_include.map(&:to_s).reject(&:empty?).uniq
-      bundles.each do |always_bundle|
-        always_include_foreign_files(always_bundle, context).each do |file|
-          owner = file_owner[file]
-          next if owner.nil? || owner == always_bundle
+      return if bundles.empty?
 
-          collided_syms = (file_defs.fetch(file, Set.new) & collided).to_a.sort
-          next if collided_syms.empty?
+      tags_by_file = Hash.new { |h, k| h[k] = [] }
+      bundles.each { |b| always_bundle_tag_files(b, context).each { |f| tags_by_file[f] << b } }
 
-          plural = collided_syms.size > 1 ? "s" : ""
-          log_warn "always_include bundle '#{always_bundle}' pulls in " \
-                   "'#{relative_require_path(file)}' (defines collided symbol#{plural} " \
-                   "#{collided_syms.join(', ')}) owned by '#{owner}'. On #{owner}'s own page " \
-                   "that file loads twice — once via the #{always_bundle} tag and once via " \
-                   "#{owner} — causing a duplicate declaration. Rename the symbol or move it " \
-                   "to a uniquely-named shared component."
+      tags_by_file.each do |file, tags|
+        owner = file_owner[file]
+        next if tags.size < 2 && (owner.nil? || tags.include?(owner))
+
+        syms = collided_symbols_reachable(file, file_defs, context, collided).to_a.sort
+        next if syms.empty?
+
+        what = "'#{relative_require_path(file)}' (#{collision_phrase(file, file_defs, collided, syms)})"
+        fix = "Rename the symbol or move it to a uniquely-named shared component."
+        if tags.size > 1
+          report_clash "always_include bundles #{tags.sort.join(', ')} all pull in #{what}. Each of those " \
+                       "bundles loads on every page via its own <script> tag, so that file loads more " \
+                       "than once on every page — a duplicate declaration. #{fix}"
+        else
+          report_clash "always_include bundle '#{tags.first}' pulls in #{what} owned by '#{owner}'. On " \
+                       "#{owner}'s own page that file loads twice — once via the #{tags.first} tag and " \
+                       "once via #{owner} — causing a duplicate declaration. #{fix}"
         end
       end
+    end
+
+    # Classic scripts share ONE global lexical scope, and under Turbolinks one window
+    # loads many pages' bundles. Two DIFFERENT files declaring the same top-level
+    # const/let/class in different bundles (a controller bundle vs another, or vs
+    # ux_shared) throw "Identifier already declared" and the later bundle is rejected.
+    # Works from the built manifests so a promoted file counts once (in ux_shared) and
+    # one file inlined into two bundles (the existing double-declare case) is not
+    # reported here: it takes two distinct declaring files across 2+ bundles.
+    def warn_on_cross_bundle_lexical_collisions(manifests, classification)
+      file_for = {}
+      (classification.shared_dirs + classification.controller_dirs).each do |d|
+        js_files_in(d[:path]).each { |f| file_for[relative_require_path(f)] = f }
+      end
+
+      bundles_by_name_file = Hash.new { |h, name| h[name] = Hash.new { |h2, f| h2[f] = Set.new } }
+      bindings = Hash.new { |h, f| h[f] = ComponentIndex.extract(f, :extract_lexical_bindings) }
+      manifests.each do |m|
+        bundle = File.basename(m[:filename], ".js")
+        m[:content].scan(%r{^//= require (\S+)$}) do |(req)|
+          file = file_for[req] or next
+          bindings[file].each { |name| bundles_by_name_file[name][file] << bundle }
+        end
+      end
+
+      bundles_by_name_file.sort.each do |name, files|
+        next if files.size < 2 || files.values.reduce(:|).size < 2
+
+        where = files.map { |f, bs| "#{relative_require_path(f)} (#{bs.to_a.sort.join(', ')})" }.join("; ")
+        report_clash "Top-level binding '#{name}' is declared by different files in different bundles: #{where}. " \
+                     "Under Turbolinks these share one global scope, so loading both bundles throws " \
+                     "\"Identifier '#{name}' has already been declared\" and rejects the second. " \
+                     "Move it inside the component body, rename it, or move the file into a shared directory."
+      end
+    end
+
+    # "defines collided symbol X" for a direct definer, "depends on ..." for a tainted file.
+    def collision_phrase(file, file_defs, collided, syms)
+      relation = (file_defs.fetch(file, Set.new) & collided).empty? ? "depends on" : "defines"
+      "#{relation} collided symbol#{'s' if syms.size > 1} #{syms.join(', ')}"
+    end
+
+    # Every file an always_include bundle's tag delivers: its own non-promoted files
+    # plus the foreign dependency files it inlines. Used to detect a file carried by
+    # more than one tag (double-loaded on every page).
+    def always_bundle_tag_files(always_bundle, context)
+      own = context[:bundle_files].fetch(always_bundle, [])
+                                  .reject { |f| context[:promoted_files].include?(f) }
+      own + always_include_foreign_files(always_bundle, context).to_a
+    end
+
+    # Collided symbols a file defines or transitively depends on: follows file_uses →
+    # canonical definer file, collecting every collided symbol reached along the way.
+    def collided_symbols_reachable(file, file_defs, context, collided)
+      file_uses = context[:file_uses]
+      sym2file  = context[:symbol_to_file]
+      result = Set.new
+      seen   = Set.new
+      stack  = [file]
+
+      until stack.empty?
+        current = stack.pop
+        next if seen.include?(current)
+
+        seen << current
+        result.merge(file_defs.fetch(current, Set.new) & collided)
+        file_uses.fetch(current, Set.new).each do |sym|
+          result << sym if collided.include?(sym)
+          dep = sym2file[sym]
+          stack << dep if dep && !seen.include?(dep)
+        end
+      end
+
+      result
     end
 
     # Files an always_include bundle's tag delivers from OTHER bundles: under
@@ -371,7 +463,7 @@ module ReactManifest
 
         files.each do |file_path|
           file_owner[file_path] = bundle_name
-          extract_defined_symbols(file_path).each do |sym|
+          ComponentIndex.extract(file_path, :extract_definitions).each do |sym|
             next unless sym.match?(/\A[A-Z][A-Za-z0-9_]*\z/)
 
             file_defs[file_path] << sym
@@ -398,7 +490,7 @@ module ReactManifest
     def record_symbol_usages(bundle_files, shared_dirs, file_uses, symbol_used_by_bundles)
       bundle_files.each do |bundle_name, files|
         files.each do |file_path|
-          extract_used_component_symbols(file_path).each do |sym|
+          ComponentIndex.extract(file_path, :extract_usages).each do |sym|
             file_uses[file_path] << sym
             symbol_used_by_bundles[sym] << bundle_name
           end
@@ -407,7 +499,7 @@ module ReactManifest
 
       shared_dirs.each do |dir|
         js_files_in(dir[:path]).each do |file_path|
-          extract_used_component_symbols(file_path).each do |sym|
+          ComponentIndex.extract(file_path, :extract_usages).each do |sym|
             symbol_used_by_bundles[sym] << @config.shared_bundle
           end
         end
@@ -424,7 +516,7 @@ module ReactManifest
         external_js_files_in(abs_root).each do |file_path|
           req_path = relative_require_path(file_path)
           warn_on_external_controller_references(file_path, symbol_to_bundle)
-          extract_defined_symbols(file_path).each do |sym|
+          ComponentIndex.extract(file_path, :extract_definitions).each do |sym|
             external_symbol_to_require[sym] ||= req_path
           end
         end
@@ -567,6 +659,26 @@ module ReactManifest
       end
     end
 
+    # Phase 1: build all content in memory — no I/O besides reading sources.
+    def build_manifests
+      @clashes = []
+      classification = @classifier.classify
+      controller_context = build_controller_context(classification.controller_dirs, classification.shared_dirs)
+
+      shared_manifest = build_shared(classification.shared_dirs, controller_context[:promoted_files])
+      manifests = [shared_manifest] + classification.controller_dirs.map do |ctrl|
+        build_controller(ctrl, controller_context)
+      end
+
+      warn_on_cross_bundle_lexical_collisions(manifests, classification)
+      [classification, manifests]
+    end
+
+    def report_clash(message)
+      @clashes << message
+      log_warn message
+    end
+
     # --------------------------------------------------------------- write
 
     def write_manifest(filename, content)
@@ -689,20 +801,6 @@ module ReactManifest
       strip_asset_extension(rel)
     end
 
-    def extract_defined_symbols(file_path)
-      content = File.read(file_path, encoding: "utf-8")
-      SymbolExtractor.extract_definitions(content, file_path: file_path)
-    rescue Errno::ENOENT, Errno::EACCES, Encoding::InvalidByteSequenceError
-      []
-    end
-
-    def extract_used_component_symbols(file_path)
-      content = File.read(file_path, encoding: "utf-8")
-      SymbolExtractor.extract_usages(content, file_path: file_path)
-    rescue Errno::ENOENT, Errno::EACCES, Encoding::InvalidByteSequenceError
-      []
-    end
-
     def external_js_files_in(dir)
       return [] unless Dir.exist?(dir)
 
@@ -723,7 +821,7 @@ module ReactManifest
     end
 
     def warn_on_external_controller_references(file_path, symbol_to_bundle)
-      extract_used_component_symbols(file_path).each do |sym|
+      ComponentIndex.extract(file_path, :extract_usages).each do |sym|
         dep_bundle = symbol_to_bundle[sym]
         next unless dep_bundle
 

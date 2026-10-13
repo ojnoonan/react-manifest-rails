@@ -15,6 +15,9 @@ module ReactManifest
       function __reactManifestExtractDefinitions(content) {
         return JSON.stringify(__astExtractor.extractDefinitions(content));
       }
+      function __reactManifestExtractLexicalBindings(content) {
+        return JSON.stringify(__astExtractor.extractLexicalBindings(content));
+      }
       function __reactManifestExtractUsages(content) {
         return JSON.stringify(__astExtractor.extractUsages(content));
       }
@@ -26,6 +29,14 @@ module ReactManifest
       def extract_definitions(content, file_path: nil)
         result = call_js("__reactManifestExtractDefinitions", content)
         return result["definitions"] if result["success"]
+
+        report_error(file_path, result["error"])
+        nil
+      end
+
+      def extract_lexical_bindings(content, file_path: nil)
+        result = call_js("__reactManifestExtractLexicalBindings", content)
+        return result["bindings"] if result["success"]
 
         report_error(file_path, result["error"])
         nil

@@ -96,6 +96,17 @@ double-declaration this feature removes. So:
 - Collided names fall back to the legacy first-writer semantics: each definer stays in
   its own bundle, and a consumer that uses the name inlines the first-defined file.
 
+> **A collided symbol cannot be safely consumed by an `always_include` bundle.**
+> Because a collided name has no collision-free page-global home, its definer (and any
+> file tainted by it) can never be promoted to `ux_shared`; it is inlined into whichever
+> `always_include` tag(s) reach it. That produces a duplicate declaration the generator
+> cannot arithmetically resolve — either on the owner's page (single tag vs. the owning
+> bundle) or on *every* page (a file carried by 2+ `always_include` tags, including a
+> merely-tainted file that only transitively depends on the collided symbol). The
+> generator **warns** about both shapes (see `warn_on_always_include_collisions`) but
+> does not auto-fix them. The fix is to **rename or relocate the collided symbol** so a
+> single uniquely-named copy can live in `ux_shared`.
+
 **Dependency inlining under promotion is file-level and transitive.** When
 `auto_shared` is on, a controller no longer inlines a whole dependency *bundle*.
 Instead it inlines exactly the canonical files for the symbols it uses that are **not**

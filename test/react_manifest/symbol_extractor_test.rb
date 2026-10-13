@@ -1,5 +1,6 @@
 require "test_helper"
 
+# rubocop:disable Metrics/ClassLength
 class SymbolExtractorTest < ReactManifestTest
   # --- extract_definitions: CommonJS style ---
 
@@ -259,4 +260,27 @@ class SymbolExtractorTest < ReactManifestTest
     ReactManifest::SymbolExtractor.extract_usages("const Broken = () => {\n  return <div>\n};\n",
                                                   file_path: "my/file.jsx")
   end
+
+  # --- extract_lexical_bindings ---
+
+  LEXICAL_SAMPLE = <<~JS.freeze
+    const { a, b: c, d = 1, ...rest } = X;
+    const [e, f] = Y;
+    let g = 1, h;
+    class K {}
+    var v = 1;
+    function fn() {}
+    const inner = () => { const hidden = 1; };
+  JS
+
+  def test_lexical_bindings_ast_covers_destructuring_and_skips_var_and_function
+    got = ReactManifest::SymbolExtractor.extract_lexical_bindings(LEXICAL_SAMPLE)
+    assert_equal %w[K a c d e f g h inner rest], got.sort
+  end
+
+  def test_lexical_bindings_regex_fallback_covers_flat_destructuring
+    got = ReactManifest::SymbolExtractor.regex_extract_lexical_bindings(LEXICAL_SAMPLE)
+    assert_equal %w[K a c d e f g inner rest], got.sort
+  end
 end
+# rubocop:enable Metrics/ClassLength

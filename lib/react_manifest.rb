@@ -7,6 +7,7 @@ require "react_manifest/configuration"
 require "react_manifest/path_utils"
 require "react_manifest/tree_classifier"
 require "react_manifest/symbol_extractor"
+require "react_manifest/component_index"
 require "react_manifest/scanner"
 require "react_manifest/dependency_map"
 require "react_manifest/generator"
@@ -19,7 +20,6 @@ require "react_manifest/watcher"
 require "react_manifest/reporter"
 require "react_manifest/view_helpers"
 
-# rubocop:disable Metrics/ModuleLength
 module ReactManifest
   class << self
     def configuration
@@ -178,77 +178,9 @@ module ReactManifest
         return cached_maps if cached_key == key
       end
 
-      controller_dirs = TreeClassifier.new(config).classify.controller_dirs
-      symbol_to_bundle = {}
-      bundle_own_symbols = Hash.new { |h, k| h[k] = Set.new }
-      bundle_files = Hash.new { |h, k| h[k] = [] }
-      bundle_dependencies = Hash.new { |h, k| h[k] = Set.new }
-
-      controller_dirs.each do |ctrl|
-        bundle_name = ctrl[:bundle_name]
-        files = js_files_in_controller(ctrl[:path], config)
-        bundle_files[bundle_name].concat(files)
-        isolated = config.isolated_app_dirs.include?(ctrl[:name])
-
-        files.each do |file_path|
-          extract_defined_symbols(file_path).each do |symbol|
-            next unless symbol.match?(/\A[A-Z][A-Za-z0-9_]*\z/)
-
-            # Keep first writer to ensure deterministic behavior if a symbol is duplicated.
-            # Isolated dirs never register into the shared symbol index (see
-            # Generator#build_controller_context for the full rationale).
-            symbol_to_bundle[symbol] ||= bundle_name unless isolated
-            bundle_own_symbols[bundle_name] << symbol
-          end
-        end
-      end
-
-      bundle_files.each do |bundle_name, files|
-        own_symbols = bundle_own_symbols[bundle_name]
-
-        files.each do |file_path|
-          extract_used_component_symbols(file_path).each do |symbol|
-            # A symbol the bundle defines itself is always satisfied locally —
-            # never attribute it to another bundle just because that symbol
-            # name happens to collide with something defined elsewhere.
-            next if own_symbols.include?(symbol)
-
-            dep_bundle = symbol_to_bundle[symbol]
-            next unless dep_bundle && dep_bundle != bundle_name
-
-            bundle_dependencies[bundle_name] << dep_bundle
-          end
-        end
-      end
-
-      maps = {
-        symbol_to_bundle: symbol_to_bundle,
-        bundle_dependencies: bundle_dependencies
-      }
+      maps = ComponentIndex.maps(config)
       @component_maps_cache = [key, maps]
       maps
-    end
-
-    def js_files_in_controller(dir, config)
-      return [] unless Dir.exist?(dir)
-
-      Dir.glob(File.join(dir, "**", config.extensions_glob))
-         .reject { |f| File.directory?(f) }
-         .sort
-    end
-
-    def extract_defined_symbols(file_path)
-      content = File.read(file_path, encoding: "utf-8")
-      SymbolExtractor.extract_definitions(content, file_path: file_path)
-    rescue Errno::ENOENT, Errno::EACCES, Encoding::InvalidByteSequenceError
-      []
-    end
-
-    def extract_used_component_symbols(file_path)
-      content = File.read(file_path, encoding: "utf-8")
-      SymbolExtractor.extract_usages(content, file_path: file_path)
-    rescue Errno::ENOENT, Errno::EACCES, Encoding::InvalidByteSequenceError
-      []
     end
 
     def resolve_bundle_reference(config, bundle_name)
@@ -286,4 +218,3 @@ module ReactManifest
     end
   end
 end
-# rubocop:enable Metrics/ModuleLength

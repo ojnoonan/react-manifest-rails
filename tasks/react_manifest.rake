@@ -136,6 +136,19 @@ namespace :react_manifest do
     end
   end
 
+  desc "Fail (exit 1, warnings on stderr) if any bundle declares the same top-level binding twice; writes nothing"
+  task check: :environment do
+    config = ReactManifest.configuration
+    next unless Dir.exist?(config.abs_ux_root)
+
+    clashes = ReactManifest::Generator.new(config).check
+    next if clashes.empty?
+
+    clashes.each { |message| warn "[ReactManifest] #{message}" }
+    warn "[ReactManifest] #{clashes.size} declaration clash(es) found."
+    exit 1
+  end
+
   desc "Print the JSX dependency map and warnings without writing any files"
   task analyze: :environment do
     config     = ReactManifest.configuration

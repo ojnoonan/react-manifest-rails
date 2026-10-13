@@ -143,13 +143,14 @@ end
 ### Key option notes
 
 - **`ignore`**: skips entire controller dirs under `ux/app/`. `ignore = ["admin"]` excludes `ux/app/admin/`.
-- **`isolated_app_dirs`**: a controller dir's own `ux_<name>.js` is generated as usual, but its files/symbols are never inferred as a dependency of any *other* controller. Without the optional AST engine below (i.e. no `mini_racer`), symbol usage detection is regex-based, so a generic component name can collide with an unrelated word appearing as plain JSX text elsewhere (e.g. a `Show` component vs. a "Show More" button label in a different controller) and get wrongly inlined everywhere. Use this as a manual, always-available fallback for self-contained dirs — e.g. a page-builder tool bundling its own vendored library — that should never leak into other pages, whether or not `mini_racer` is installed. `isolated_app_dirs = ["rvb"]` isolates `ux/app/rvb/`.
+- **`isolated_app_dirs`**: a controller dir's own `ux_<name>.js` is generated as usual, but its files/symbols are never inferred as a dependency of any *other* controller. When the AST engine below is unavailable (e.g. `mini_racer` failed to load), symbol usage detection is regex-based, so a generic component name can collide with an unrelated word appearing as plain JSX text elsewhere (e.g. a `Show` component vs. a "Show More" button label in a different controller) and get wrongly inlined everywhere. Use this as a manual, always-available fallback for self-contained dirs — e.g. a page-builder tool bundling its own vendored library — that should never leak into other pages, whether or not `mini_racer` is installed. `isolated_app_dirs = ["rvb"]` isolates `ux/app/rvb/`.
 - **`exclude_paths`**: excludes files whose path contains any listed segment. Not based on `application.js`.
 - **`dry_run`**: also honoured by `DRY_RUN=1` environment variable at runtime.
 - **`extensions`**: add `ts` and `tsx` to enable TypeScript source detection.
 - **`external_roots` / `external_providers`**: do not point these at files already inside shared `ux/` dirs (`components/`, `hooks/`, `lib/`, etc.). The generator now skips those overlaps to prevent duplicate declarations in browser runtime.
 - **`stdout_logging`**: `Rails.logger` always receives status lines regardless of this flag. Turn this on only if your `Rails.logger` does *not* already print to your terminal in development — if it does (common with `RAILS_LOG_TO_STDOUT`, Docker, or `bin/dev`/Foreman setups), enabling this prints every line twice.
-- **AST-based symbol extraction**: add `gem "mini_racer"` to your Gemfile to opt in. When present, definitions and usages are derived from a real JS/JSX AST (Acorn) instead of regex, which fixes false positives like a `Show` component colliding with unrelated text such as a "Show More" button label. Falls back to regex extraction per-file on any parse failure (always logged via `Rails.logger.warn` with file/line/column when available) — generation never breaks because of this. Without `mini_racer`, behavior is unchanged from today.
+- **Component index**: `react_manifest:generate` (and dev boot/watch) also writes `ux_manifests/component_index.json`, a gitignored build artifact. `react_component` reads it instead of parsing `ux/app` with V8 on the first call in each web process. It is used only when its fingerprint (gem version, config, file list and contents) matches; otherwise the runtime parses as before.
+- **AST-based symbol extraction**: `mini_racer` is a dependency of this gem. Definitions and usages are derived from a real JS/JSX AST (Acorn) instead of regex, which fixes false positives like a `Show` component colliding with unrelated text such as a "Show More" button label. Falls back to regex extraction per-file on any parse failure (always logged via `Rails.logger.warn` with file/line/column when available) — generation never breaks because of this.
 
 ## Commands
 
@@ -163,6 +164,10 @@ bundle exec rails react_manifest:generate
 # Preview any command without writing
 DRY_RUN=1 bundle exec rails react_manifest:setup
 DRY_RUN=1 bundle exec rails react_manifest:generate
+
+# CI gate: writes nothing; exits 1 and prints each "declared twice" warning to stderr
+# (cross-bundle top-level const/let/class clashes, always_include double-declares)
+bundle exec rails react_manifest:check
 
 # Analyse which shared symbols are used per controller
 bundle exec rails react_manifest:analyze

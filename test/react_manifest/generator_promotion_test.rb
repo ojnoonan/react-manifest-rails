@@ -416,6 +416,86 @@ class GeneratorPromotionTest < ReactManifestTest
            "no double-load warning expected, got: #{warnings}")
   end
 
+  # ---- gap 1: a TAINTED file pulled into 2+ always_include tags -------------
+
+  # Repro from the pre-release review. `Widget` collides across two controllers,
+  # so `helper` (which uses <Widget/>) is TAINTED and can never be promoted to
+  # ux_shared. Both ux_alpha and ux_beta transitively pull `helper` (and the
+  # first-writer Widget definer) into their tags. Since both tags load on EVERY
+  # page, `helper` double-declares everywhere — but it does not DIRECTLY define a
+  # collided symbol, so the old warning missed it entirely.
+  def test_tainted_file_in_two_always_bundles_warns_about_every_page_double
+    ReactManifest.configure { |c| c.always_include = %w[ux_alpha ux_beta] }
+    write_ux("app/orders/orders_widget.js.jsx", "const Widget = () => <div>orders</div>;\n")
+    write_ux("app/things/things_widget.js.jsx", "const Widget = () => <div>things</div>;\n")
+    write_ux("app/common/helper.js.jsx", "const Helper = () => <Widget />;\n")
+    write_ux("app/alpha/alpha.js.jsx", "const Alpha = () => <Helper />;\n")
+    write_ux("app/beta/beta.js.jsx", "const Beta = () => <Helper />;\n")
+
+    warnings = capture_warnings { ReactManifest::Generator.new(@config).run! }
+
+    helper_warns = warnings.select { |m| m.include?("ux/app/common/helper") }
+    assert(helper_warns.any? do |m|
+      m.include?("Widget") && m.include?("ux_alpha") && m.include?("ux_beta") &&
+        m.include?("every page")
+    end, "expected helper (tainted) to be warned as an every-page double: #{warnings}")
+  end
+
+  # gap 2: the collided DEFINER pulled into 2+ tags must get the accurate
+  # every-page (tag-vs-tag) wording, NOT the misleading owner-page wording.
+  def test_collided_definer_in_two_always_bundles_uses_every_page_wording
+    ReactManifest.configure { |c| c.always_include = %w[ux_alpha ux_beta] }
+    write_ux("app/orders/orders_widget.js.jsx", "const Widget = () => <div>orders</div>;\n")
+    write_ux("app/things/things_widget.js.jsx", "const Widget = () => <div>things</div>;\n")
+    write_ux("app/common/helper.js.jsx", "const Helper = () => <Widget />;\n")
+    write_ux("app/alpha/alpha.js.jsx", "const Alpha = () => <Helper />;\n")
+    write_ux("app/beta/beta.js.jsx", "const Beta = () => <Helper />;\n")
+
+    warnings = capture_warnings { ReactManifest::Generator.new(@config).run! }
+
+    orders_warns = warnings.select { |m| m.include?("ux/app/orders/orders_widget") }
+    assert(orders_warns.any? do |m|
+      m.include?("every page") && m.include?("ux_alpha") && m.include?("ux_beta")
+    end, "expected orders_widget to get an every-page multi-tag warning: #{orders_warns}")
+    # The double here is tag-vs-tag on every page, NOT "on ux_orders's own page".
+    refute(orders_warns.any? { |m| m.include?("own page") },
+           "collided definer on 2+ tags must not use owner-page wording: #{orders_warns}")
+  end
+
+  # The single-always owner-page case must KEEP its owner-page wording (it really
+  # is the owner's page where tag-vs-owner-bundle collide, not every page).
+  def test_single_always_owner_page_wording_is_retained
+    ReactManifest.configure { |c| c.always_include = ["ux_navbar"] }
+    write_ux("app/billing/billing_widget.js.jsx", "const Widget = () => <div>billing</div>;\n")
+    write_ux("app/orders/orders_widget.js.jsx", "const Widget = () => <div>orders</div>;\n")
+    write_ux("app/navbar/navbar.js.jsx", "const Navbar = () => <Widget />;\n")
+
+    warnings = capture_warnings { ReactManifest::Generator.new(@config).run! }
+
+    billing = warnings.select { |m| m.include?("ux/app/billing/billing_widget") }
+    assert(billing.any? { |m| m.include?("own page") && m.include?("ux_billing") },
+           "single-always case should keep owner-page wording: #{billing}")
+  end
+
+  # A TAINTED file (only depends on a collided symbol) carried by ONE always tag and
+  # also owned by its own bundle double-loads on the owner's page; must be warned.
+  def test_tainted_file_in_single_always_bundle_warns_owner_page_double
+    ReactManifest.configure { |c| c.always_include = ["ux_navbar"] }
+    write_ux("app/orders/orders_widget.js.jsx", "const Widget = () => <div>orders</div>;\n")
+    write_ux("app/things/things_widget.js.jsx", "const Widget = () => <div>things</div>;\n")
+    write_ux("app/common/helper.js.jsx", "const Helper = () => <Widget />;\n")
+    write_ux("app/common/other.js.jsx", "const Other = () => <div />;\n")
+    write_ux("app/navbar/navbar.js.jsx", "const Navbar = () => <Helper />;\n")
+
+    warnings = capture_warnings { ReactManifest::Generator.new(@config).run! }
+
+    helper = warnings.select { |m| m.include?("ux/app/common/helper") }
+    assert(helper.any? do |m|
+      m.include?("depends on collided symbol Widget") && m.include?("own page") &&
+        m.include?("ux_common")
+    end, "expected tainted helper owner-page warning: #{warnings}")
+  end
+
   def test_auto_shared_false_restores_legacy_inline_behavior
     ReactManifest.configure { |c| c.auto_shared = false }
     write_ux("app/common/export_form.js.jsx", "const ExportForm = () => <div />;\n")
@@ -436,6 +516,55 @@ class GeneratorPromotionTest < ReactManifestTest
     key = "ux/app/common/export_form"
     assert reasons.key?(key), "expected #{key} in promotion reasons: #{reasons.keys}"
     assert_includes reasons[key], "ux_reports"
+  end
+
+  # ---- cross-bundle top-level lexical collisions (Turbolinks: one window) ----
+
+  def test_same_lexical_binding_in_two_controller_bundles_warns_per_symbol
+    destructure = "const { validateNotBlank, validateLength: checkLen } = FormValidations;\n"
+    write_ux("app/tasks/tasks_form.js.jsx", "#{destructure}const TasksForm = () => <div />;\n")
+    write_ux("app/projects/projects_form.js.jsx", "#{destructure}const ProjectsForm = () => <div />;\n")
+
+    warnings = capture_warnings { ReactManifest::Generator.new(@config).run! }
+
+    %w[validateNotBlank checkLen].each do |name|
+      hits = warnings.select { |m| m.include?("Top-level binding '#{name}'") }
+      assert_equal 1, hits.size, "expected one warning for #{name}: #{warnings}"
+      %w[ux/app/tasks/tasks_form (ux_tasks) ux/app/projects/projects_form (ux_projects) rename].each do |part|
+        assert_includes hits.first, part
+      end
+    end
+    refute(warnings.any? { |m| m.include?("Top-level binding 'validateLength'") }, "alias name only")
+  end
+
+  def test_lexical_binding_in_shared_dir_and_controller_bundle_warns
+    write_ux("lib/format.js.jsx", "let formatter = 1;\n")
+    write_ux("app/tasks/tasks_form.js.jsx", "class formatter {}\n")
+
+    warnings = capture_warnings { ReactManifest::Generator.new(@config).run! }
+
+    assert(warnings.any? do |m|
+      m.include?("'formatter'") && m.include?("ux_shared") && m.include?("ux_tasks")
+    end, warnings.to_s)
+  end
+
+  def test_var_and_function_redeclaration_across_bundles_does_not_warn
+    write_ux("app/tasks/tasks_form.js.jsx", "var helper = 1;\nfunction check() {}\n")
+    write_ux("app/projects/projects_form.js.jsx", "var helper = 2;\nfunction check() {}\n")
+
+    warnings = capture_warnings { ReactManifest::Generator.new(@config).run! }
+
+    refute(warnings.any? { |m| m.include?("Top-level binding") }, warnings.to_s)
+  end
+
+  def test_promoted_file_declaring_a_binding_counts_once
+    write_ux("app/common/export_form.js.jsx", "const limit = 5;\nconst ExportForm = () => <div />;\n")
+    write_ux("app/reports/reports_index.js.jsx", "const ReportsIndex = () => <ExportForm />;\n")
+    write_ux("app/orders/orders_index.js.jsx", "const OrdersIndex = () => <ExportForm />;\n")
+
+    warnings = capture_warnings { ReactManifest::Generator.new(@config).run! }
+
+    refute(warnings.any? { |m| m.include?("Top-level binding") }, warnings.to_s)
   end
 end
 # rubocop:enable Metrics/ClassLength

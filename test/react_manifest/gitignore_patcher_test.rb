@@ -25,12 +25,13 @@ class GitignorePatcherTest < ReactManifestTest
     @patcher.patch!
     result = ReactManifest::GitignorePatcher.new(@config).patch!
     refute result.appended
-    occurrences = File.read(gitignore_path).scan("app/assets/javascripts/ux_manifests/*.js").size
+    occurrences = File.read(gitignore_path).scan("app/assets/javascripts/ux_manifests/*.js\n").size
     assert_equal 1, occurrences
   end
 
   def test_respects_existing_entry_in_a_populated_gitignore
-    File.write(gitignore_path, "/log\napp/assets/javascripts/ux_manifests/*.js\n/tmp\n")
+    File.write(gitignore_path,
+               "/log\napp/assets/javascripts/ux_manifests/*.js\napp/assets/javascripts/ux_manifests/*.json\n/tmp\n")
     result = @patcher.patch!
     refute result.appended
   end
@@ -51,5 +52,18 @@ class GitignorePatcherTest < ReactManifestTest
     @patcher.patch!
     result = ReactManifest::GitignorePatcher.new(@config).patch!
     refute result.keep_created
+  end
+
+  def test_also_ignores_the_component_index_sidecar
+    @patcher.patch!
+    assert_equal "app/assets/javascripts/ux_manifests/*.json", @patcher.json_pattern
+    assert_includes File.read(gitignore_path), "app/assets/javascripts/ux_manifests/*.json"
+  end
+
+  def test_adds_only_the_missing_json_line_to_an_existing_gitignore
+    File.write(gitignore_path, "app/assets/javascripts/ux_manifests/*.js\n")
+    result = @patcher.patch!
+    assert result.appended
+    assert_equal 1, File.read(gitignore_path).scan("ux_manifests/*.js\n").size
   end
 end

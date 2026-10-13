@@ -29,12 +29,14 @@ Gem::Specification.new do |spec|
     "LICENSE",
     "README.md",
     "CHANGELOG.md"
-  ]
+  ].reject { |f| f.include?("/node_modules/") } # vendor/build's npm install tree is build-time only
 
   spec.require_paths = ["lib"]
 
   # Runtime dependencies
   spec.add_dependency "railties", ">= 7.0", "< 9"
+  # AstExtractor needs MiniRacer::Context#eval/#call (Context#call: 0.2.0).
+  spec.add_dependency "mini_racer", ">= 0.2"
 
   # Development dependencies
   spec.add_development_dependency "minitest", "~> 5.0"
@@ -46,9 +48,4 @@ Gem::Specification.new do |spec|
   # The gem gracefully degrades without it; add to your app's Gemfile:
   #   gem "listen", "~> 3.0", group: :development
   spec.add_development_dependency "listen", "~> 3.0"
-  # mini_racer is a soft runtime dependency (AST-based symbol extraction).
-  # The gem gracefully degrades to regex extraction without it; add to your
-  # app's Gemfile to opt in:
-  #   gem "mini_racer", group: :development
-  spec.add_development_dependency "mini_racer"
 end
